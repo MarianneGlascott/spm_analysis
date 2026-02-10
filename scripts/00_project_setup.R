@@ -1,52 +1,23 @@
-# Project:     SPM Analysis - Impact on kelp spore motility
-# Scripts:     00_project_setup.R
+#!/usr/bin/env Rscript
+
+# Project:     SPM Analysis - Impact on kelp zoospore motility
+# Script:      00_project_setup.R
 # Author:      Marianne Glascott
 # Affiliation: School of Life Sciences, University of Sussex
-# Date:        2026_February_10
-# Version:     1.0
-# ==============================================================================
-# Goal: Initialize a fully reproducible R project for Manuscript 4 (SPM & zoospore motility)
-# Requirements:
-# - Initialize renv
-# - Create standard folder structure
-# - Define global ggplot theme (Kelp_theme)
-# - Define named colour palette (kelp_palette)
-# - Define helper functions: save_plot(), save_table(), log_message()
-# Outputs to disk:
-# - renv.lock (via renv)
-# - folders
-# - outputs/setup_log.txt
-# Do not load data. Do not fit models.
+# Date:        2026-02-10
+# Purpose:
+#   - Ensure renv is initialized (reproducible environment)
+#   - Create standard folder structure
+#   - Write shared style + helper functions (R/kelp_style.R, R/helpers.R)
+#   - Write outputs/setup_log.txt
+# Outputs (file-based):
+#   - renv.lock (updated via renv::snapshot)
+#   - outputs/setup_log.txt
+#   - R/kelp_style.R
+#   - R/helpers.R
 
-suppressPackageStartupMessages({
-  if (!requireNamespace("here", quietly = TRUE)) install.packages("here")
-})
-library(here)
-
-# ---------- Paths ----------
-dir_outputs <- here::here("outputs")
-dir_scripts <- here::here("scripts")
-dir_data_raw <- here::here("data_raw")
-dir_data_processed <- here::here("data_processed")
-dir_figures <- here::here("figures")
-dir_tables <- here::here("tables")
-dir_models <- here::here("models")
-dir_logs <- here::here("logs")
-dir_R <- here::here("R")
-
-# ---------- Create folders ----------
-dirs_to_create <- c(
-  dir_outputs, dir_scripts, dir_data_raw, dir_data_processed,
-  dir_figures, dir_tables, dir_models, dir_logs, dir_R
-)
-for (d in dirs_to_create) {
-  if (!dir.exists(d)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
-}
-
-# ---------- Logging helper (inline, then written to R/helpers.R) ----------
-setup_log_file <- file.path(dir_outputs, "setup_log.txt")
-
-log_message_inline <- function(msg, log_file = setup_log_file) {
+# ---- Base logger (works before here is installed) ----
+log_base <- function(msg, log_file = "outputs/setup_log.txt") {
   ts <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
   line <- paste0("[", ts, "] ", msg)
   cat(line, "\n")
@@ -54,37 +25,65 @@ log_message_inline <- function(msg, log_file = setup_log_file) {
   cat(line, "\n", file = log_file, append = TRUE)
 }
 
-log_message_inline("Starting 00_project_setup.R")
-log_message_inline(paste0("Project root (here::here()): ", here::here(".")))
+log_base("Starting 00_project_setup.R")
 
-# ---------- Initialize renv ----------
+# ---- Ensure renv exists ----
 if (!requireNamespace("renv", quietly = TRUE)) {
-  log_message_inline("renv not installed; installing from CRAN...")
+  log_base("Installing renv from CRAN...")
   install.packages("renv")
 }
 
-# Only init if not already present
-if (!file.exists(here::here("renv.lock"))) {
-  log_message_inline("Initializing renv (bare = TRUE)...")
+# ---- Initialize renv if needed (robust check) ----
+renv_initialized <- file.exists("renv/activate.R") || file.exists("renv/settings.json")
+
+if (!renv_initialized) {
+  log_base("renv not initialized (renv/activate.R not found). Running renv::init(bare = TRUE)...")
   renv::init(bare = TRUE)
-  log_message_inline("renv initialized; renv.lock should now exist.")
+  
+  # renv will restart the session; stop so user re-runs cleanly
+  log_base("renv initialized; session restarted by renv. Please re-run scripts/00_project_setup.R.")
+  stop("renv initialized and session restarted. Re-run scripts/00_project_setup.R.")
 } else {
-  log_message_inline("renv.lock already exists; skipping renv::init().")
+  log_base("renv appears initialized.")
 }
 
-# Ensure key packages recorded (but don't force-install a long list)
-pkgs_min <- c("ggplot2", "readr", "dplyr")
-missing_min <- pkgs_min[!vapply(pkgs_min, requireNamespace, logical(1), quietly = TRUE)]
-if (length(missing_min) > 0) {
-  log_message_inline(paste0(
-    "Some common packages are missing: ", paste(missing_min, collapse = ", "),
-    ". You can install via renv::install(c(...)) later."
-  ))
+# ---- Ensure required packages are installed inside renv library ----
+install_if_missing <- function(pkg) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    log_base(paste0("Installing '", pkg, "' into renv library..."))
+    renv::install(pkg)
+  }
 }
 
-# ---------- Write style + helpers to R/ ----------
-style_file <- file.path(dir_R, "kelp_style.R")
-helpers_file <- file.path(dir_R, "helpers.R")
+install_if_missing("here")
+install_if_missing("ggplot2")
+install_if_missing("readr")
+install_if_missing("dplyr")
+
+suppressPackageStartupMessages(library(here))
+log_base(paste0("here() project root: ", here::here(".")))
+
+# ---- Create standard folder structure ----
+dirs_to_create <- c(
+  here::here("outputs"),
+  here::here("scripts"),
+  here::here("data_raw"),
+  here::here("data_processed"),
+  here::here("figures"),
+  here::here("tables"),
+  here::here("models"),
+  here::here("logs"),
+  here::here("R")
+)
+
+for (d in dirs_to_create) {
+  if (!dir.exists(d)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
+}
+log_base("Folder structure created/verified.")
+
+# ---- Write shared style + helper files ----
+style_file   <- here::here("R", "kelp_style.R")
+helpers_file <- here::here("R", "helpers.R")
 
 style_contents <- c(
   "# Auto-generated by scripts/00_project_setup.R",
@@ -103,7 +102,7 @@ style_contents <- c(
   "    )",
   "}",
   "",
-  "# Named colour palette (edit freely as you iterate)",
+  "# Named colour palette (edit as you iterate)",
   "kelp_palette <- c(",
   "  kelp_green = '#2E7D32',",
   "  kelp_teal  = '#00796B',",
@@ -133,16 +132,16 @@ helpers_contents <- c(
   "  invisible(line)",
   "}",
   "",
-  "# Save a ggplot with informative defaults; always writes to disk",
+  "# Save a ggplot to disk",
   "save_plot <- function(p, filename, width = 7, height = 5, dpi = 300, dir = here::here('figures')) {",
   "  dir.create(dir, recursive = TRUE, showWarnings = FALSE)",
   "  out <- file.path(dir, filename)",
   "  ggplot2::ggsave(filename = out, plot = p, width = width, height = height, dpi = dpi, units = 'in')",
   "  log_message(paste0('Saved plot: ', out))",
-  "  return(out)",
+  "  out",
   "}",
   "",
-  "# Save a table to disk; supports csv or tsv by extension",
+  "# Save a table to disk (csv/tsv by extension; otherwise .csv fallback)",
   "save_table <- function(df, filename, dir = here::here('tables')) {",
   "  dir.create(dir, recursive = TRUE, showWarnings = FALSE)",
   "  out <- file.path(dir, filename)",
@@ -152,20 +151,22 @@ helpers_contents <- c(
   "  } else if (ext == 'tsv') {",
   "    readr::write_tsv(df, out)",
   "  } else {",
-  "    # fallback to csv if unknown",
   "    out <- paste0(out, '.csv')",
   "    readr::write_csv(df, out)",
   "  }",
   "  log_message(paste0('Saved table: ', out))",
-  "  return(out)",
+  "  out",
   "}",
   ""
 )
 
-writeLines(style_contents, con = style_file)
-log_message_inline(paste0("Wrote style file: ", style_file))
+writeLines(style_contents, style_file)
+writeLines(helpers_contents, helpers_file)
 
-writeLines(helpers_contents, con = helpers_file)
-log_message_inline(paste0("Wrote helpers file: ", helpers_file))
+log_base(paste0("Wrote: ", style_file))
+log_base(paste0("Wrote: ", helpers_file))
 
-log_message_inline("00_project_setup.R complete.")
+# ---- Snapshot environment (updates renv.lock) ----
+log_base("Running renv::snapshot(prompt = FALSE)...")
+renv::snapshot(prompt = FALSE)
+log_base("00_project_setup.R complete.")
