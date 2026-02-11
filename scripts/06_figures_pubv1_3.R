@@ -146,73 +146,94 @@ p2 <- ggplot(emm_season_df, aes(x = season, y = estimate, ymin = lcl, ymax = ucl
 
 save_pub(p2, "Fig2_motility_emm_season", width = 3.6, height = 3.2)
 
+# ====================================================================
+# FIGURE 3: NTU effect in L. digitata
+# ====================================================================
+ntu_rds <- here::here("models", "ms4_motility_ntu_L_digitata_glmmTMB.rds")
 
-# ====================================================================
-# FIGURE 3: NTU effect in L. digitata (if model exists)
-# ====================================================================
 if (file.exists(ntu_rds)) {
   
   ntu_fit <- readRDS(ntu_rds)
   log_msg(paste0("Loaded NTU model: ", ntu_rds))
   
   mf <- model.frame(ntu_fit)
-  
-  # Determine whether model uses ntu_z or ntu
-  term_names <- all.vars(formula(ntu_fit))
-  uses_ntu_z <- "ntu_z" %in% term_names
-  uses_ntu   <- "ntu" %in% term_names
-  
-  if (!uses_ntu_z && !uses_ntu) {
-    stop("NTU model does not appear to include ntu or ntu_z. Terms were: ",
-         paste(unique(term_names), collapse = ", "))
-  }
+  needed <- names(mf)
   
   # Build an NTU grid on the ORIGINAL scale for x-axis
-  ntu_rng <- range(mf$ntu, na.rm = TRUE)  # mf should still contain raw ntu
+  # If mf doesn't include raw ntu (because you standardised before fitting),
+  # fall back to df (parquet) for the range.
+  if ("ntu" %in% names(mf)) {
+    ntu_rng <- range(mf$ntu, na.rm = TRUE)
+  } else {
+    ntu_rng <- range(df$ntu[df$species == "L. digitata"], na.rm = TRUE)
+  }
+  
   ntu_grid <- data.frame(ntu = seq(ntu_rng[1], ntu_rng[2], length.out = 120))
   
-  # Reference values for other covariates
+  # Reference values for factors
   site_ref   <- levels(mf$site)[1]
   season_ref <- levels(mf$season)[1]
   
   tox_levels <- levels(mf$toxin_exposure)
   tox_ref <- if ("CONTROL" %in% tox_levels) "CONTROL" else tox_levels[1]
   
-  lux_ref <- if ("lux_exposure" %in% names(mf)) median(mf$lux_exposure, na.rm = TRUE) else 0
-  cu_ref  <- if ("cu_ug_l" %in% names(mf)) median(mf$cu_ug_l, na.rm = TRUE) else 0
-  
   culture_ref <- levels(mf$culture)[1]
   expid_ref   <- levels(mf$experiment_id)[1]
   
+  # Base newdata (always include factor columns model expects)
   newdata <- ntu_grid %>%
-    mutate(
+    dplyr::mutate(
       site           = factor(site_ref,   levels = levels(mf$site)),
       season         = factor(season_ref, levels = levels(mf$season)),
       toxin_exposure = factor(tox_ref,    levels = levels(mf$toxin_exposure)),
-      lux_exposure   = lux_ref,
-      cu_ug_l        = cu_ref,
       culture        = factor(culture_ref, levels = levels(mf$culture)),
       experiment_id  = factor(expid_ref,   levels = levels(mf$experiment_id))
     )
   
-  # If model expects ntu_z, compute it using the same scaling used in the model frame if possible
-  if (uses_ntu_z) {
-    # If ntu_z in model frame has scaling attributes (best case)
-    nz <- mf$ntu_z
-    center <- attr(nz, "scaled:center")
-    scalev <- attr(nz, "scaled:scale")
-    
+  # Helper: compute z from model-frame scaling attrs if present; else fallback mean/sd
+  make_z <- function(raw_vec, z_vec_from_mf, raw_fallback) {
+    center <- attr(z_vec_from_mf, "scaled:center")
+    scalev <- attr(z_vec_from_mf, "scaled:scale")
     if (is.null(center) || is.null(scalev)) {
-      # fallback: compute from raw ntu column in model frame
-      center <- mean(mf$ntu, na.rm = TRUE)
-      scalev <- stats::sd(mf$ntu, na.rm = TRUE)
+      center <- mean(raw_fallback, na.rm = TRUE)
+      scalev <- stats::sd(raw_fallback, na.rm = TRUE)
     }
-    
-    newdata <- newdata %>%
-      mutate(ntu_z = (ntu - center) / scalev)
+    (raw_vec - center) / scalev
   }
   
-  # Predict
+  # Supply whichever predictors the model actually uses -------------------------
+  
+  # NTU
+  if ("ntu_z" %in% needed) {
+    # model uses standardised NTU
+    raw_fallback <- if ("ntu" %in% names(mf)) mf$ntu else df$ntu[df$species == "L. digitata"]
+    newdata$ntu_z <- make_z(newdata$ntu, mf$ntu_z, raw_fallback)
+  } else if ("ntu" %in% needed) {
+    # model uses raw NTU
+    newdata$ntu <- newdata$ntu
+  } else {
+    stop("NTU model does not include ntu or ntu_z. Model-frame vars: ", paste(needed, collapse = ", "))
+  }
+  
+  # LUX
+  if ("lux_z" %in% needed) {
+    # set to mean (z=0) unless you want a scenario
+    newdata$lux_z <- 0
+  } else if ("lux_exposure" %in% needed) {
+    # if raw lux used, set to median from parquet/model frame
+    lux_ref <- if ("lux_exposure" %in% names(mf)) median(mf$lux_exposure, na.rm = TRUE) else median(df$lux_exposure, na.rm = TRUE)
+    newdata$lux_exposure <- lux_ref
+  }
+  
+  # Copper
+  if ("cu_z" %in% needed) {
+    newdata$cu_z <- 0
+  } else if ("cu_ug_l" %in% needed) {
+    cu_ref <- if ("cu_ug_l" %in% names(mf)) median(mf$cu_ug_l, na.rm = TRUE) else median(df$cu_ug_l, na.rm = TRUE)
+    newdata$cu_ug_l <- cu_ref
+  }
+  
+  # Predict --------------------------------------------------------------------
   pr <- predict(
     ntu_fit,
     newdata = newdata,
@@ -221,13 +242,12 @@ if (file.exists(ntu_rds)) {
     allow.new.levels = TRUE
   )
   
-  pred_df <- newdata %>%
-    transmute(
-      ntu = ntu,
-      fit = plogis(pr$fit),
-      lwr = plogis(pr$fit - 1.96 * pr$se.fit),
-      upr = plogis(pr$fit + 1.96 * pr$se.fit)
-    )
+  pred_df <- dplyr::tibble(
+    ntu = newdata$ntu,
+    fit = plogis(pr$fit),
+    lwr = plogis(pr$fit - 1.96 * pr$se.fit),
+    upr = plogis(pr$fit + 1.96 * pr$se.fit)
+  )
   
   p3 <- ggplot(pred_df, aes(x = ntu, y = fit)) +
     geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.2) +
@@ -242,7 +262,5 @@ if (file.exists(ntu_rds)) {
   save_pub(p3, "Fig3_motility_ntu_L_digitata", width = 4.6, height = 3.2)
   
 } else {
-  log_msg("NOTE: NTU model RDS not found; skipping Fig3. (Expected only if identifiable.)")
+  log_msg("NOTE: NTU model RDS not found; skipping Fig3.")
 }
-
-
