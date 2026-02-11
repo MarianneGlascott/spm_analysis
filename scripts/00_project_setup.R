@@ -1,5 +1,3 @@
-#!/usr/bin/env Rscript
-
 # Project:     SPM Analysis - Impact on kelp zoospore motility
 # Script:      00_project_setup.R
 # Author:      Marianne Glascott

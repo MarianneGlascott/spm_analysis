@@ -16,10 +16,9 @@
 #   - No silent filtering
 #   - Log all coercions and warnings
 #   - Proportions are derived; counts retained
-#==============================================================================
+# ==============================================================================
 
 suppressPackageStartupMessages({
-  library(renv)
   library(here)
   library(readr)
   library(dplyr)
@@ -53,6 +52,7 @@ out_map  <- here::here("outputs", "name_map_01_import_clean.csv")
 
 dir.create(dirname(out_parq), recursive = TRUE, showWarnings = FALSE)
 dir.create(dirname(out_dict), recursive = TRUE, showWarnings = FALSE)
+dir.create(dirname(out_sum),  recursive = TRUE, showWarnings = FALSE)
 
 # ---- Guardrail: enforce expected input location ----
 if (!file.exists(in_path)) {
@@ -74,10 +74,7 @@ log_msg(paste0("Raw data loaded: n=", nrow(raw_df), " rows; p=", ncol(raw_df), "
 orig_names <- names(raw_df)
 
 # ---- Standardise column names to snake_case ----
-df <- raw_df %>%
-  janitor::clean_names()
-
-
+df <- raw_df %>% janitor::clean_names()
 clean_names <- names(df)
 
 # Write name map (audit trail)
@@ -89,12 +86,11 @@ log_msg(paste0("Wrote name map: ", out_map))
 # We only rename known variants/synonyms; we do not fabricate missing columns.
 rename_map <- c(
   # identifiers / provenance
-
   "cama_file"        = "camera_file",
   "cama_file_name"   = "camera_file",
   "cama_file_"       = "camera_file",
   
-  # counts (observed some truncated names in screenshot)
+  # counts (observed some truncated names)
   "mobile_ce"        = "mobile_cell_count",
   "mobile_cell"      = "mobile_cell_count",
   "mobile_cells"     = "mobile_cell_count",
@@ -122,11 +118,6 @@ rename_map <- c(
   "preparation_"     = "preparation"
 )
 
-if ("video_file" %in% names(df)) {
-  df$video_file <- factor(df$video_file)
-  log_msg("Canonicalised 'video_file' as factor (unique observation ID).")
-}
-
 # Apply rename_map only where the source column exists AND target does not already exist
 for (src in names(rename_map)) {
   tgt <- rename_map[[src]]
@@ -137,6 +128,7 @@ for (src in names(rename_map)) {
 }
 
 # ---- Canonical ID: video_file ----
+# Prefer video_file if already present; otherwise rename video_file_name -> video_file
 if ("video_file_name" %in% names(df)) {
   if (!"video_file" %in% names(df)) {
     df <- dplyr::rename(df, video_file = video_file_name)
@@ -146,8 +138,10 @@ if ("video_file_name" %in% names(df)) {
   }
 }
 
-if ("video_file" %in% names(df)) df$video_file <- factor(df$video_file)
-
+if ("video_file" %in% names(df)) {
+  df$video_file <- factor(df$video_file)
+  log_msg("Canonicalised 'video_file' as factor (unique observation ID).")
+}
 
 # ---- Expected canonical columns (for reporting only) ----
 expected_cols <- c(
@@ -199,66 +193,41 @@ coerce_factor <- function(x, nm) {
 }
 
 coerce_date_dmy <- function(x, nm) {
-  # Accept dd/mm/yyyy (your sample) but also tolerate already-Date/POSIX
   if (inherits(x, "Date")) return(x)
   if (inherits(x, "POSIXct") || inherits(x, "POSIXt")) return(as.Date(x))
   if (is.factor(x)) x <- as.character(x)
   x <- str_trim(x)
-  
-  # Some fields may contain "none" — keep as NA (no filtering)
   x[x %in% c("", "none", "None", "NA", "N/A")] <- NA_character_
   
   out <- suppressWarnings(lubridate::dmy(x, quiet = TRUE))
-  # Log parse failures where input was non-NA but output is NA
   fail <- sum(!is.na(x) & is.na(out))
   if (fail > 0) log_msg(paste0("WARNING: date parsing failed for ", fail, " value(s) in '", nm, "'."))
   out
 }
 
 # ---- Apply explicit type coercions ----
-
-# Factor identifiers / grouping variables (as per your rule)
 factor_vars <- c(
   "video_file","camera_file","species","site","culture","experiment","well",
   "toxin_exposure","tile","season","collection_site","year",
-  # you specified collection_date as factor (metadata)
   "collection_date"
 )
+for (nm in intersect(factor_vars, names(df))) df[[nm]] <- coerce_factor(df[[nm]], nm)
 
-for (nm in intersect(factor_vars, names(df))) {
-  df[[nm]] <- coerce_factor(df[[nm]], nm)
-}
+int_vars <- c("frame_count","mobile_cell_count","stationary_cell_count","total_cells","tile_count","days_from_start")
+for (nm in intersect(int_vars, names(df))) df[[nm]] <- coerce_integer(df[[nm]], nm)
 
-# Integer count variables (raw biological counts + QC counts)
-int_vars <- c(
-  "frame_count","mobile_cell_count","stationary_cell_count","total_cells",
-  "tile_count","days_from_start"
-)
-for (nm in intersect(int_vars, names(df))) {
-  df[[nm]] <- coerce_integer(df[[nm]], nm)
-}
-
-# Numeric continuous predictors (environmental/exposure)
 num_vars <- c("cu_ug_l","ntu","lux_exposure")
-for (nm in intersect(num_vars, names(df))) {
-  df[[nm]] <- coerce_numeric(df[[nm]], nm)
-}
+for (nm in intersect(num_vars, names(df))) df[[nm]] <- coerce_numeric(df[[nm]], nm)
 
-# Dates (explicit)
 date_vars <- c("count_date_yyyy_mm_dd","start_date_yyyy_mm_dd","preparation","release")
-for (nm in intersect(date_vars, names(df))) {
-  df[[nm]] <- coerce_date_dmy(df[[nm]], nm)
-}
+for (nm in intersect(date_vars, names(df))) df[[nm]] <- coerce_date_dmy(df[[nm]], nm)
 
-# Comment as character free text (do not coerce to factor)
 if ("comment" %in% names(df)) {
   if (is.factor(df$comment)) df$comment <- as.character(df$comment)
   df$comment <- as.character(df$comment)
 }
 
 # ---- Derived variables (no row drops; log checks) ----
-
-# non_mobile_count = total_cells - mobile_cell_count
 if (all(c("total_cells", "mobile_cell_count") %in% names(df))) {
   df <- df %>% mutate(non_mobile_count = total_cells - mobile_cell_count)
   log_msg("Derived 'non_mobile_count' = total_cells - mobile_cell_count.")
@@ -266,16 +235,13 @@ if (all(c("total_cells", "mobile_cell_count") %in% names(df))) {
   log_msg("WARNING: Could not derive non_mobile_count (missing total_cells and/or mobile_cell_count).")
 }
 
-# motility_ratio = mobile_cell_count / total_cells (derived)
-# We always compute it from counts; if an existing motility_ratio column exists, compare + log.
 if (all(c("total_cells", "mobile_cell_count") %in% names(df))) {
-  computed <- ifelse(is.na(df$total_cells) | df$total_cells == 0, NA_real_, df$mobile_cell_count / df$total_cells)
+  computed <- ifelse(is.na(df$total_cells) | df$total_cells == 0,
+                     NA_real_,
+                     df$mobile_cell_count / df$total_cells)
   
   if ("motility_ratio" %in% names(df)) {
-    # coerce existing to numeric first (it may have been character/factor)
     df$motility_ratio <- coerce_numeric(df$motility_ratio, "motility_ratio")
-    
-    # Compare where both non-NA
     diff_idx <- which(!is.na(df$motility_ratio) & !is.na(computed) & abs(df$motility_ratio - computed) > 1e-6)
     if (length(diff_idx) > 0) {
       log_msg(paste0(
@@ -300,13 +266,20 @@ if (all(c("total_cells", "mobile_cell_count") %in% names(df))) {
   log_msg("WARNING: Could not derive motility_ratio (missing total_cells and/or mobile_cell_count).")
 }
 
-# ---- Write processed data to parquet ----
-arrow::write_parquet(df, out_parq)
-log_msg(paste0("Wrote processed data: ", out_parq))
+# ---- Write processed data to parquet (safe replace on Windows) ----
+tmp_parq <- paste0(out_parq, ".tmp")
 
-# ---- Write data dictionary to outputs/data_dictionary.csv ----
-# We output your declared dictionary plus actual detected class for auditability.
+# write to tmp first
+arrow::write_parquet(df, tmp_parq)
+log_msg(paste0("Wrote temp parquet: ", tmp_parq))
 
+# replace old parquet
+if (file.exists(out_parq)) file.remove(out_parq)
+file.rename(tmp_parq, out_parq)
+log_msg(paste0("Replaced parquet: ", out_parq))
+
+
+# ---- Write data dictionary ----
 dict_spec <- tibble::tribble(
   ~column_name, ~meaning_role, ~unit, ~type_declared, ~notes,
   "video_file", "Unique observation ID", "", "factor", "",
@@ -347,17 +320,73 @@ actual_types <- tibble(
 
 dict_out <- dict_spec %>%
   left_join(actual_types, by = "column_name") %>%
-  arrange(match(column_name, unique(column_name)))
+  mutate(.order = match(column_name, dict_spec$column_name)) %>%
+  arrange(.order) %>%
+  select(-.order)
 
 readr::write_csv(dict_out, out_dict)
 log_msg(paste0("Wrote data dictionary: ", out_dict))
 
-# ---- Write data summary to outputs/data_summary.txt ----
+# ---- Toxin exposure codebook + counts (metadata; no data changes) ----
+toxin_codebook <- tibble::tribble(
+  ~toxin_exposure,      ~toxin_label,                                   ~material_class, ~source,                                            ~notes,
+  "CONTROL",            "Control (no added particulate/toxin)",          "control",       NA_character_,                                      NA_character_,
+  "none",               "None / unlabelled control",                     "control",       NA_character_,                                      "Kept as-is; consider harmonising to CONTROL later only if you decide.",
+  
+  "BaSO4",              "Barium sulfate (BaSO₄)",                        "particulate",   "Sigma-Aldrich (243353)",                           "Reference particulate",
+  
+  "BDC",                "Brake dust (fine; Cambridge HEPA-derived)",     "particulate",   "University of Cambridge (Siriel Saladin)",         "Fine brake wear; hypothesised higher toxicity",
+  "BDS",                "Brake dust (coarse; Sussex tyre/lorries)",      "particulate",   "University of Sussex (Phil Howe)",                 "Coarse brake wear; mixed particle sizes",
+  
+  "Cu0",                "Copper (elemental; Cu⁰)",                       "chemical",      NA_character_,                                      "Speciation test: metallic copper",
+  "CuO",                "Copper oxide (CuO)",                            "chemical",      NA_character_,                                      "Speciation test: particulate/oxide form",
+  "CuSO4",              "Copper sulfate (CuSO₄; ionic copper)",          "chemical",      NA_character_,                                      "Speciation test: ionic copper",
+  
+  "SPM",                "Suspended particulate matter (SPM)",            "particulate",   NA_character_,                                      "Field-relevant mixed particulates",
+  "SAND",               "Sand",                                          "particulate",   NA_character_,                                      NA_character_,
+  "PEAT",               "Peat",                                          "particulate",   NA_character_,                                      NA_character_,
+  "GRAPHITE",           "Graphite",                                      "particulate",   NA_character_,                                      NA_character_,
+  "PLASTER OF PARIS",   "Plaster of Paris",                              "particulate",   NA_character_,                                      NA_character_,
+  "COIR",               "Coir fibres",                                   "particulate",   NA_character_,                                      NA_character_,
+  "KAOLINITE",          "Kaolinite clay",                                "particulate",   NA_character_,                                      NA_character_,
+  "CLAY SCHOOL",        "Clay (school source)",                          "particulate",   NA_character_,                                      NA_character_,
+  "CLAY CLOGGED",       "Clay (clogged / high solids)",                  "particulate",   NA_character_,                                      "As recorded in raw metadata"
+)
+
+if ("toxin_exposure" %in% names(df) && is.factor(df$toxin_exposure)) {
+  present_codes <- levels(df$toxin_exposure)
+  
+  toxin_codebook_out <- toxin_codebook %>%
+    dplyr::filter(toxin_exposure %in% present_codes)
+  
+  missing_in_codebook <- setdiff(present_codes, toxin_codebook_out$toxin_exposure)
+  if (length(missing_in_codebook) > 0) {
+    log_msg(paste0(
+      "WARNING: toxin_exposure level(s) not in codebook (left unlabeled): ",
+      paste(missing_in_codebook, collapse = ", ")
+    ))
+  }
+  
+  out_codebook <- here::here("outputs", "toxin_exposure_codebook.csv")
+  readr::write_csv(toxin_codebook_out, out_codebook)
+  log_msg(paste0("Wrote toxin exposure codebook: ", out_codebook))
+  
+  out_counts <- here::here("outputs", "toxin_exposure_counts.csv")
+  df %>%
+    count(toxin_exposure, name = "n_rows") %>%
+    arrange(desc(n_rows)) %>%
+    readr::write_csv(out_counts)
+  log_msg(paste0("Wrote toxin exposure counts: ", out_counts))
+} else {
+  log_msg("NOTE: toxin_exposure missing or not a factor; skipped toxin codebook + counts outputs.")
+}
+
+# ---- Write data summary ----
 col_summary <- tibble(
-  column = names(df),
-  class = vapply(df, function(x) paste(class(x), collapse = "/"), character(1)),
+  column    = names(df),
+  class     = vapply(df, function(x) paste(class(x), collapse = "/"), character(1)),
   n_missing = vapply(df, function(x) sum(is.na(x)), integer(1)),
-  n_unique = vapply(df, function(x) dplyr::n_distinct(x, na.rm = FALSE), integer(1))
+  n_unique  = vapply(df, function(x) dplyr::n_distinct(x, na.rm = FALSE), integer(1))
 )
 
 num_preview <- function(x) {
@@ -380,7 +409,6 @@ col_summary <- col_summary %>%
     levels_factor = vapply(df, fct_preview, character(1))
   )
 
-# Design count snapshots (written as separate csvs for audit)
 if (all(c("site","species") %in% names(df))) {
   ss <- df %>% count(site, species, name = "n_rows") %>% arrange(desc(n_rows))
   ss_path <- here::here("outputs","design_counts_site_x_species.csv")
@@ -416,5 +444,3 @@ writeLines(lines, out_sum)
 log_msg(paste0("Wrote data summary: ", out_sum))
 
 log_msg("01_import_clean.R complete.")
-
-
