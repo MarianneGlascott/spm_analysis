@@ -143,14 +143,14 @@ kelp_experiment_values <- c(
 kelp_exp1_light_family <- c(
   "0 lux"   = kelp_palette[["CONTROL"]],
   "4 lux"   = kelp_palette[["SPM"]],
-  "70 lux"  = kelp_palette[["LIGHT_LOW"]],
-  "117 lux" = kelp_palette[["LIGHT_HIGH"]]
+  "70 lux"  = "#8fae78",
+  "117 lux" = "#2f7d32"
 )
 
 # Experiment 2: defined-particle family.
 # Earth/sediment tones are used for the defined-particle series.
 kelp_exp2_particle_family <- c(
-  "Sand"      = kelp_palette[["SAND"]],
+  "Sand"      = "#d8bd76",
   "Kaolinite" = kelp_palette[["LAMINARIA_DIGITATA"]],
   "Peat"      = kelp_palette[["PEAT"]]
 )
