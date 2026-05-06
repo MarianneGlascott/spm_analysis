@@ -5,20 +5,20 @@
 # Project: SPM Analysis
 # Manuscript: Manuscript 4
 # Purpose: Define the central project plotting theme,
-#          color palettes, figure dimensions, and helper
+#          colour palettes, figure dimensions, and helper
 #          functions for consistent publication-ready plots.
 # Inputs: None
 # Outputs: Global helper objects and functions available
 #          to downstream scripts after sourcing
-# Date created: 24 February 2026
+# Date created: 24 March 2026
 # Last updated: 24 March 2026
 # Notes/dependencies:
 # - Source via 01_setup_packages_and_paths.R
-# - Species colors are retained for cross-manuscript
+# - Species colours are retained for cross-manuscript
 #   consistency, but Article 4 figures should use
-#   treatment-based colors rather than species colours.
+#   treatment-based colours rather than species colours.
 # - Hard-coded hex values should not be used in plotting
-#   scripts; access colors through named palette objects.
+#   scripts; access colours through named palette objects.
 # =========================================================
 
 message("Loading helper script: R/helpers_theme.R")
@@ -35,7 +35,7 @@ if (!requireNamespace("ggplot2", quietly = TRUE)) {
 # 2. Master colour palettes
 # ---------------------------------------------------------
 
-# Cross-manuscript species palette (fixed reference colors)
+# Cross-manuscript species palette (fixed reference colours)
 kelp_species_palette <- c(
   saccharina_latissima = "#ba89c3",  # mauve
   laminaria_digitata   = "#c09c0e",  # golden ochre
@@ -124,7 +124,54 @@ kelp_shape_values <- c(
   "SPM"       = 24,
   "CONTROL"   = 19
 )
+# ---------------------------------------------------------
+# 3b. Article 4 Day 4 figure colour families
+# ---------------------------------------------------------
 
+# Experiment-level anchor colours for synthesis figures
+# such as Figure 8. Each experiment has one visual identity.
+kelp_experiment_values <- c(
+  "Experiment 1: light-only"        = kelp_palette[["CONTROL"]],
+  "Experiment 2: defined particles" = kelp_palette[["LAMINARIA_DIGITATA"]],
+  "Experiment 3: brake-wear size"   = kelp_palette[["SACCHARINA_LATISSIMA"]],
+  "Experiment 4: field-derived SPM" = kelp_palette[["LIGHT_LOW"]]
+)
+
+# Experiment 1: light-only family.
+# Kept deliberately neutral because the x-axis already carries
+# the light-treatment structure.
+kelp_exp1_light_family <- c(
+  "0 lux"   = kelp_palette[["CONTROL"]],
+  "4 lux"   = kelp_palette[["SPM"]],
+  "70 lux"  = kelp_palette[["LIGHT_LOW"]],
+  "117 lux" = kelp_palette[["LIGHT_HIGH"]]
+)
+
+# Experiment 2: defined-particle family.
+# Earth/sediment tones are used for the defined-particle series.
+kelp_exp2_particle_family <- c(
+  "Sand"      = kelp_palette[["SAND"]],
+  "Kaolinite" = kelp_palette[["LAMINARIA_DIGITATA"]],
+  "Peat"      = kelp_palette[["PEAT"]]
+)
+
+# Experiment 3: brake-wear family.
+# Coarse and fine fractions are kept in the same impact family,
+# with the fine fraction shown as the darker/stronger colour.
+kelp_exp3_brake_family <- c(
+  "Coarse" = kelp_palette[["SACCHARINA_LATISSIMA"]],
+  "Fine"   = kelp_palette[["BWF"]]
+)
+
+# Experiment 4: field-SPM family.
+# Field-derived SPM is shown in the blue/green environmental family.
+kelp_exp4_spm_family <- c(
+  "SPM" = kelp_palette[["LIGHT_LOW"]]
+)
+
+# Shared support colours for model-output plots
+kelp_raw_point_colour <- "#b8b8b8"
+kelp_reference_line_colour <- kelp_palette[["CONTROL"]]
 # ---------------------------------------------------------
 # 4. Figure dimension constants
 # ---------------------------------------------------------
@@ -266,6 +313,55 @@ get_kelp_cols <- function(keys, palette = kelp_palette) {
 # 8. Manual scale helpers
 # ---------------------------------------------------------
 
+scale_colour_kelp_experiment <- function(...) {
+  ggplot2::scale_colour_manual(
+    values = kelp_experiment_values,
+    ...
+  )
+}
+
+scale_fill_kelp_experiment <- function(...) {
+  ggplot2::scale_fill_manual(
+    values = kelp_experiment_values,
+    ...
+  )
+}
+
+scale_colour_kelp_exp1_light <- function(...) {
+  ggplot2::scale_colour_manual(
+    values = kelp_exp1_light_family,
+    ...
+  )
+}
+
+scale_colour_kelp_exp2_particle <- function(...) {
+  ggplot2::scale_colour_manual(
+    values = kelp_exp2_particle_family,
+    ...
+  )
+}
+
+scale_colour_kelp_exp3_brake <- function(...) {
+  ggplot2::scale_colour_manual(
+    values = kelp_exp3_brake_family,
+    ...
+  )
+}
+
+scale_fill_kelp_exp4_spm <- function(...) {
+  ggplot2::scale_fill_manual(
+    values = kelp_exp4_spm_family,
+    ...
+  )
+}
+
+scale_colour_kelp_exp4_spm <- function(...) {
+  ggplot2::scale_colour_manual(
+    values = kelp_exp4_spm_family,
+    ...
+  )
+}
+
 scale_colour_kelp_particle <- function(...) {
   ggplot2::scale_colour_manual(
     values = kelp_particle_values,
@@ -381,3 +477,5 @@ message("helpers_theme.R loaded successfully.")
 message("Available palette objects: kelp_species_palette, kelp_treatment_palette, kelp_palette")
 message("Available theme helpers: theme_kelp(), set_kelp_theme(), finish_kelp_plot()")
 message("Available scale helpers: scale_colour_kelp_particle(), scale_fill_kelp_particle(), scale_colour_kelp_light(), scale_fill_kelp_light()")
+message("Available Day 4 palettes: kelp_experiment_values, kelp_exp1_light_family, kelp_exp2_particle_family, kelp_exp3_brake_family, kelp_exp4_spm_family")
+message("Available Day 4 scale helpers: scale_colour_kelp_experiment(), scale_colour_kelp_exp1_light(), scale_colour_kelp_exp2_particle(), scale_colour_kelp_exp3_brake(), scale_colour_kelp_exp4_spm()")
