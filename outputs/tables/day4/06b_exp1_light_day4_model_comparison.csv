@@ -1,0 +1,5 @@
+model,family,df,AIC,delta_aic,model_status,error_message,experiment,experiment_num,analysis_branch
+factor_betabinomial,betabinomial,5,429.66074905195,0,success,NA,Experiment 1,9.2,day4
+null_betabinomial,betabinomial,2,430.37924953542097,0.7185004834709616,success,NA,Experiment 1,9.2,day4
+factor_binomial,binomial,4,1096.7046767759016,667.0439277239516,success,NA,Experiment 1,9.2,day4
+null_binomial,binomial,1,1097.125497131613,667.464748079663,success,NA,Experiment 1,9.2,day4

@@ -1,0 +1,4 @@
+effect,component,term,estimate,std.error,statistic,p.value,conf.low,conf.high,model,experiment,experiment_num,analysis_branch
+fixed,cond,(Intercept),-0.5301467056175989,0.04158057088698004,-12.749865966453136,3.122817042007905e-37,-0.6116431270126945,-0.44865028422250336,particle_only_betabinomial,Experiment 2,10.2,day4
+fixed,cond,particle_type_modelKAOLINITE,0.16914235237391687,0.058009454937456,2.915772136736691,0.0035480952694406723,0.05544590993370392,0.2828387948141298,particle_only_betabinomial,Experiment 2,10.2,day4
+fixed,cond,particle_type_modelPEAT,0.08358206665201891,0.05831665407020558,1.433245236453331,0.1517877661633587,-0.03071647502446516,0.19788060832850296,particle_only_betabinomial,Experiment 2,10.2,day4

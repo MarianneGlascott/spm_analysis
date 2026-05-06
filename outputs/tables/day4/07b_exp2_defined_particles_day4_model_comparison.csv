@@ -1,0 +1,11 @@
+model,family,df,AIC,delta_aic,model_status,error_message,experiment,experiment_num,analysis_branch
+particle_only_betabinomial,betabinomial,4,482.0238568154068,0,success,NA,Experiment 2,10.2,day4
+interaction_betabinomial,betabinomial,7,483.7847850789228,1.760928263516007,success,NA,Experiment 2,10.2,day4
+additive_betabinomial,betabinomial,5,483.87894420611565,1.8550873907088317,success,NA,Experiment 2,10.2,day4
+null_betabinomial,betabinomial,2,485.4832854100955,3.4594285946886885,success,NA,Experiment 2,10.2,day4
+ntu_only_betabinomial,betabinomial,3,487.3582647118461,5.334407896439302,success,NA,Experiment 2,10.2,day4
+interaction_binomial,binomial,6,1532.8403707407465,1050.8165139253397,success,NA,Experiment 2,10.2,day4
+particle_only_binomial,binomial,3,1649.0046715619947,1166.9808147465878,success,NA,Experiment 2,10.2,day4
+additive_binomial,binomial,4,1650.1109047115306,1168.0870478961237,success,NA,Experiment 2,10.2,day4
+null_binomial,binomial,1,1783.1371984770076,1301.1133416616008,success,NA,Experiment 2,10.2,day4
+ntu_only_binomial,binomial,2,1785.1234711466209,1303.099614331214,success,NA,Experiment 2,10.2,day4
