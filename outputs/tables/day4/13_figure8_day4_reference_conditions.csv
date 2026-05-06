@@ -1,0 +1,5 @@
+experiment,experiment_num,experiment_label,experiment_block,reference_condition,reference_short
+Experiment 4,8.2,Field-derived SPM gradient,Experiment 4: field-derived SPM,Lowest observed NTU: 0,0 NTU
+Experiment 1,9.2,Light-only gradient,Experiment 1: light-only,117 lux,117 lux
+Experiment 2,10.2,Defined particle concentration series,Experiment 2: defined particles,Sand at 25 NTU,Sand at 25 NTU
+Experiment 3,11.2,Brake-wear size comparison,Experiment 3: brake-wear size,BWC at 4.5 ug/L,BWC 4.5 ug/L

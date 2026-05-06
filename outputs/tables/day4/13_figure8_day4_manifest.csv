@@ -1,0 +1,5 @@
+output_type,path,notes
+combined_effects,C:/SPM_Analysis/outputs/tables/day4/13_figure8_day4_relative_effects_combined.csv,Combined harmonised relative effects from Experiments 1-4.
+effect_ranking,C:/SPM_Analysis/outputs/tables/day4/13_figure8_day4_effect_ranking.csv,"Largest negative, largest positive, and largest absolute effects."
+reference_conditions,C:/SPM_Analysis/outputs/tables/day4/13_figure8_day4_reference_conditions.csv,Experiment-specific reference conditions used for proportional effects.
+figure8_forest_plot,C:/SPM_Analysis/outputs/figures/day4/Fig8_day4_relative_effects_forest_plot.pdf,PDF version of Figure 8 forest plot; PNG and TIFF also saved.
