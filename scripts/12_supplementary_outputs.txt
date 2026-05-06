@@ -1,0 +1,702 @@
+# =========================================================
+# Script title: 12_supplementary_outputs.R
+# Project: SPM Analysis
+# Author: Marianne Glascott
+# Affiliation: School of Life Sciences, University of Sussex
+# Manuscript: Manuscript 4
+# Purpose: Generate supplementary figures, supplementary
+#          summary tables, and linked caption/manifest files
+#          for Manuscript 4 from saved QC, EDA, and model
+#          outputs.
+# Inputs:
+# - data_derived/ms4_qc_flagged_full.csv or .rds
+# - data_derived/ms4_analysis_ready.csv or .rds
+# - data_derived/ms4_analysis_derived.csv or .rds
+# - outputs/tables/03_qc_flag_summary.csv
+# - outputs/tables/03_exclusion_summary.csv
+# - outputs/tables/03_qc_row_level_flags.csv
+# - outputs/tables/05_eda_response_summary.csv
+# - outputs/tables/05_eda_missingness_summary.csv
+# - outputs/tables/05_eda_by_experiment_day.csv
+# - outputs/tables/06_exp1_light_model_comparison.csv
+# - outputs/tables/07_exp2_defined_particles_model_comparison.csv
+# - outputs/tables/08_exp3_brake_size_model_comparison.csv
+# - outputs/tables/09_exp4_field_spm_model_comparison.csv
+# - outputs/models/exp1_light/exp1_light_preferred_model_predictions.csv
+# - outputs/models/exp2_defined_particles/exp2_defined_particles_preferred_model_predictions.csv
+# - outputs/models/exp3_brake_size/exp3_brake_size_preferred_model_predictions.csv
+# - outputs/models/exp4_field_spm/exp4_field_spm_preferred_model_predictions.csv
+# Outputs:
+# - outputs/figures/supplementary/FigS1_qc_flow_summary_*.{pdf,png,tiff}
+# - outputs/figures/supplementary/FigS2_eda_distributions_*.{pdf,png,tiff}
+# - outputs/figures/supplementary/FigS3_model_comparison_summary_*.{pdf,png,tiff}
+# - outputs/figures/supplementary/FigS4_optional_pilot_mineral_gradient_*.{pdf,png,tiff} [optional]
+# - outputs/tables/TableS1_qc_exclusion_summary.csv
+# - outputs/tables/TableS2_eda_summary.csv
+# - outputs/tables/TableS3_model_comparison_detail.csv
+# - outputs/tables/TableS4_prediction_file_manifest.csv
+# - outputs/tables/12_supplementary_outputs_manifest.csv
+# - outputs/logs/12_supplementary_outputs_log_*.txt
+# Date created: 26 March 2026
+# Last updated: 26 March 2026
+# Notes/dependencies:
+# - Run 01_setup_packages_and_paths.R first.
+# - Run 03, 05, and 06-09 before this script.
+# - This script assembles supplementary outputs only.
+# - It does not fit new primary models.
+# - Supplementary outputs follow the brief:
+#   Fig S1 QC flow diagram or exclusion summary
+#   Fig S2 EDA distributions of response counts and motility_ratio
+#   Fig S3 Sensitivity model comparisons
+#   Fig S4 Optional pilot mineral gradient
+# - Manuscript 4 is restricted to:
+#   experiment_num %in% c(8.2, 9.2, 10.2, 11.2)
+# =========================================================
+
+cat("\n========================================================\n")
+cat("SCRIPT 12: SUPPLEMENTARY OUTPUTS\n")
+cat("Start time:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("========================================================\n\n")
+
+# ---------------------------------------------------------
+# 1. Check setup objects
+# ---------------------------------------------------------
+
+required_objects <- c(
+  "project_root",
+  "dir_data_derived",
+  "dir_tables",
+  "dir_logs",
+  "project_title",
+  "manuscript_short"
+)
+
+missing_objects <- required_objects[!vapply(required_objects, exists, logical(1), inherits = TRUE)]
+
+if (length(missing_objects) > 0) {
+  stop(
+    paste0(
+      "The following required setup object(s) are missing:\n- ",
+      paste(missing_objects, collapse = "\n- "),
+      "\nPlease run 01_setup_packages_and_paths.R first."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Setup objects verified.\n\n")
+
+# ---------------------------------------------------------
+# 2. Source helper scripts if available
+# ---------------------------------------------------------
+
+helper_files <- c(
+  "helpers_theme.R",
+  "helpers_save_figures.R",
+  "helpers_labels.R",
+  "helpers_tables.R"
+)
+
+for (hf in helper_files) {
+  helper_path <- file.path(project_root, "R", hf)
+  if (file.exists(helper_path)) {
+    source(helper_path)
+    cat("Loaded helper:", hf, "\n")
+  }
+}
+cat("\n")
+
+# ---------------------------------------------------------
+# 3. Define file paths
+# ---------------------------------------------------------
+
+file_qc_rds <- file.path(dir_data_derived, "ms4_qc_flagged_full.rds")
+file_qc_csv <- file.path(dir_data_derived, "ms4_qc_flagged_full.csv")
+
+file_ready_rds <- file.path(dir_data_derived, "ms4_analysis_ready.rds")
+file_ready_csv <- file.path(dir_data_derived, "ms4_analysis_ready.csv")
+
+file_derived_rds <- file.path(dir_data_derived, "ms4_analysis_derived.rds")
+file_derived_csv <- file.path(dir_data_derived, "ms4_analysis_derived.csv")
+
+file_qc_flag_summary <- file.path(dir_tables, "03_qc_flag_summary.csv")
+file_exclusion_summary <- file.path(dir_tables, "03_exclusion_summary.csv")
+file_qc_row_flags <- file.path(dir_tables, "03_qc_row_level_flags.csv")
+
+file_eda_response_summary <- file.path(dir_tables, "05_eda_response_summary.csv")
+file_eda_missingness_summary <- file.path(dir_tables, "05_eda_missingness_summary.csv")
+file_eda_by_experiment_day <- file.path(dir_tables, "05_eda_by_experiment_day.csv")
+
+file_exp1_model_comp <- file.path(dir_tables, "06_exp1_light_model_comparison.csv")
+file_exp2_model_comp <- file.path(dir_tables, "07_exp2_defined_particles_model_comparison.csv")
+file_exp3_model_comp <- file.path(dir_tables, "08_exp3_brake_size_model_comparison.csv")
+file_exp4_model_comp <- file.path(dir_tables, "09_exp4_field_spm_model_comparison.csv")
+
+file_exp1_preds <- file.path(project_root, "outputs", "models", "exp1_light", "exp1_light_preferred_model_predictions.csv")
+file_exp2_preds <- file.path(project_root, "outputs", "models", "exp2_defined_particles", "exp2_defined_particles_preferred_model_predictions.csv")
+file_exp3_preds <- file.path(project_root, "outputs", "models", "exp3_brake_size", "exp3_brake_size_preferred_model_predictions.csv")
+file_exp4_preds <- file.path(project_root, "outputs", "models", "exp4_field_spm", "exp4_field_spm_preferred_model_predictions.csv")
+
+file_table_s1 <- file.path(dir_tables, "TableS1_qc_exclusion_summary.csv")
+file_table_s2 <- file.path(dir_tables, "TableS2_eda_summary.csv")
+file_table_s3 <- file.path(dir_tables, "TableS3_model_comparison_detail.csv")
+file_table_s4 <- file.path(dir_tables, "TableS4_prediction_file_manifest.csv")
+file_manifest <- file.path(dir_tables, "12_supplementary_outputs_manifest.csv")
+
+timestamp_now <- format(Sys.time(), "%Y%m%d_%H%M%S")
+file_supp_log <- file.path(
+  dir_logs,
+  paste0("12_supplementary_outputs_log_", timestamp_now, ".txt")
+)
+
+figure_subdir <- "supplementary"
+
+# ---------------------------------------------------------
+# 4. Small helpers
+# ---------------------------------------------------------
+
+read_any_data <- function(rds_path, csv_path, object_label) {
+  if (file.exists(rds_path)) {
+    x <- readRDS(rds_path)
+    attr(x, "source_path") <- rds_path
+    return(x)
+  }
+  if (file.exists(csv_path)) {
+    x <- readr::read_csv(csv_path, show_col_types = FALSE, progress = FALSE)
+    attr(x, "source_path") <- csv_path
+    return(x)
+  }
+  stop(
+    paste0(
+      "Required file for ", object_label, " not found.\nExpected one of:\n- ",
+      rds_path, "\n- ", csv_path
+    ),
+    call. = FALSE
+  )
+}
+
+read_if_exists <- function(path) {
+  if (!file.exists(path)) return(NULL)
+  readr::read_csv(path, show_col_types = FALSE, progress = FALSE)
+}
+
+safe_n_distinct <- function(x) {
+  dplyr::n_distinct(x, na.rm = TRUE)
+}
+
+safe_mean <- function(x) {
+  if (all(is.na(x))) return(NA_real_)
+  mean(x, na.rm = TRUE)
+}
+
+safe_sd <- function(x) {
+  if (sum(!is.na(x)) < 2) return(NA_real_)
+  stats::sd(x, na.rm = TRUE)
+}
+
+safe_min <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0) return(NA_real_)
+  min(x)
+}
+
+safe_max <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0) return(NA_real_)
+  max(x)
+}
+
+save_supp_figure <- function(plot_obj, figure_name, caption_text, height = "standard") {
+  if (is.null(plot_obj)) return(character(0))
+
+  saved <- character(0)
+
+  if (exists("save_figure_both_widths", mode = "function", inherits = TRUE)) {
+    saved <- save_figure_both_widths(
+      plot = plot_obj,
+      figure_name = figure_name,
+      subdir = figure_subdir,
+      height = height,
+      quiet = TRUE
+    )
+  }
+
+  if (exists("write_figure_caption_md", mode = "function", inherits = TRUE)) {
+    write_figure_caption_md(
+      figure_name = figure_name,
+      caption_text = caption_text,
+      subdir = figure_subdir
+    )
+  }
+
+  saved
+}
+
+# ---------------------------------------------------------
+# 5. Import datasets
+# ---------------------------------------------------------
+
+qc_dat <- read_any_data(file_qc_rds, file_qc_csv, "QC-flagged dataset")
+ready_dat <- read_any_data(file_ready_rds, file_ready_csv, "analysis-ready dataset")
+derived_dat <- read_any_data(file_derived_rds, file_derived_csv, "derived dataset")
+
+cat("Core datasets loaded.\n")
+cat("QC source:", attr(qc_dat, "source_path"), "\n")
+cat("Ready source:", attr(ready_dat, "source_path"), "\n")
+cat("Derived source:", attr(derived_dat, "source_path"), "\n\n")
+
+# ---------------------------------------------------------
+# 6. Restrict ready/derived data to Manuscript 4 block
+# ---------------------------------------------------------
+
+ms4_experiment_nums <- c(8.2, 9.2, 10.2, 11.2)
+
+ready_dat <- ready_dat |>
+  dplyr::mutate(
+    experiment_num = suppressWarnings(as.numeric(as.character(experiment_num)))
+  ) |>
+  dplyr::filter(!is.na(experiment_num), experiment_num %in% ms4_experiment_nums)
+
+derived_dat <- derived_dat |>
+  dplyr::mutate(
+    experiment_num = suppressWarnings(as.numeric(as.character(experiment_num)))
+  ) |>
+  dplyr::filter(!is.na(experiment_num), experiment_num %in% ms4_experiment_nums)
+
+cat("Restricted analysis-ready and derived datasets to Manuscript 4 block.\n")
+cat("Rows in ready data:", nrow(ready_dat), "\n")
+cat("Rows in derived data:", nrow(derived_dat), "\n\n")
+
+# ---------------------------------------------------------
+# 7. Load supplementary source tables
+# ---------------------------------------------------------
+
+qc_flag_summary <- read_if_exists(file_qc_flag_summary)
+exclusion_summary <- read_if_exists(file_exclusion_summary)
+qc_row_flags <- read_if_exists(file_qc_row_flags)
+
+eda_response_summary <- read_if_exists(file_eda_response_summary)
+eda_missingness_summary <- read_if_exists(file_eda_missingness_summary)
+eda_by_experiment_day <- read_if_exists(file_eda_by_experiment_day)
+
+modcomp_exp1 <- read_if_exists(file_exp1_model_comp)
+modcomp_exp2 <- read_if_exists(file_exp2_model_comp)
+modcomp_exp3 <- read_if_exists(file_exp3_model_comp)
+modcomp_exp4 <- read_if_exists(file_exp4_model_comp)
+
+pred_exp1 <- read_if_exists(file_exp1_preds)
+pred_exp2 <- read_if_exists(file_exp2_preds)
+pred_exp3 <- read_if_exists(file_exp3_preds)
+pred_exp4 <- read_if_exists(file_exp4_preds)
+
+cat("Supplementary source tables loaded where available.\n\n")
+
+# ---------------------------------------------------------
+# 8. Set plotting theme and palettes
+# ---------------------------------------------------------
+
+if (exists("set_kelp_theme", mode = "function", inherits = TRUE)) {
+  set_kelp_theme()
+}
+
+particle_palette_local <- c(
+  "CONTROL"   = "#4D4D4D",
+  "SAND"      = "#C2B280",
+  "KAOLINITE" = "#A6CEE3",
+  "PEAT"      = "#8B4513",
+  "BWC"       = "#D55E00",
+  "BWF"       = "#CC79A7",
+  "SPM"       = "#0072B2"
+)
+
+if (exists("particle_palette", inherits = TRUE)) {
+  particle_palette_local <- get("particle_palette", inherits = TRUE)
+}
+
+# ---------------------------------------------------------
+# 9. Table S1: QC / exclusion summary
+# ---------------------------------------------------------
+
+table_s1_qc_overview <- tibble::tibble(
+  metric = c(
+    "n_rows_qc_dataset",
+    "n_rows_analysis_ready",
+    "n_rows_excluded",
+    "pct_rows_excluded"
+  ),
+  value = c(
+    nrow(qc_dat),
+    nrow(ready_dat),
+    nrow(qc_dat) - nrow(ready_dat),
+    round(((nrow(qc_dat) - nrow(ready_dat)) / nrow(qc_dat)) * 100, 2)
+  )
+)
+
+table_s1 <- dplyr::bind_rows(
+  table_s1_qc_overview |>
+    dplyr::mutate(section = "qc_overview"),
+  if (!is.null(qc_flag_summary)) {
+    qc_flag_summary |>
+      dplyr::mutate(section = "qc_flag_summary")
+  } else {
+    NULL
+  },
+  if (!is.null(exclusion_summary)) {
+    exclusion_summary |>
+      dplyr::mutate(section = "exclusion_summary")
+  } else {
+    NULL
+  }
+)
+
+readr::write_csv(table_s1, file_table_s1)
+
+cat("Table S1 written to:\n")
+cat(file_table_s1, "\n\n")
+
+# ---------------------------------------------------------
+# 10. Table S2: EDA summary
+# ---------------------------------------------------------
+
+table_s2 <- dplyr::bind_rows(
+  if (!is.null(eda_response_summary)) {
+    eda_response_summary |>
+      dplyr::mutate(section = "response_summary")
+  } else {
+    NULL
+  },
+  if (!is.null(eda_missingness_summary)) {
+    eda_missingness_summary |>
+      dplyr::mutate(section = "missingness_summary")
+  } else {
+    NULL
+  },
+  if (!is.null(eda_by_experiment_day)) {
+    eda_by_experiment_day |>
+      dplyr::mutate(section = "by_experiment_day")
+  } else {
+    NULL
+  }
+)
+
+readr::write_csv(table_s2, file_table_s2)
+
+cat("Table S2 written to:\n")
+cat(file_table_s2, "\n\n")
+
+# ---------------------------------------------------------
+# 11. Table S3: Model comparison detail
+# ---------------------------------------------------------
+
+standardise_model_comp <- function(df, experiment_label, experiment_num_value) {
+  if (is.null(df) || nrow(df) == 0) return(NULL)
+
+  out <- df |>
+    dplyr::mutate(
+      experiment_label = experiment_label,
+      experiment_num = experiment_num_value
+    )
+
+  if (!"model_rank" %in% names(out)) {
+    out <- out |>
+      dplyr::mutate(model_rank = dplyr::row_number())
+  }
+
+  out
+}
+
+table_s3 <- dplyr::bind_rows(
+  standardise_model_comp(modcomp_exp1, "Experiment 1: Light-only gradient", 9.2),
+  standardise_model_comp(modcomp_exp2, "Experiment 2: Defined particles", 10.2),
+  standardise_model_comp(modcomp_exp3, "Experiment 3: Brake-wear size", 11.2),
+  standardise_model_comp(modcomp_exp4, "Experiment 4: Field-derived SPM", 8.2)
+) |>
+  dplyr::arrange(experiment_num, model_rank)
+
+readr::write_csv(table_s3, file_table_s3)
+
+cat("Table S3 written to:\n")
+cat(file_table_s3, "\n\n")
+
+# ---------------------------------------------------------
+# 12. Table S4: Prediction file manifest
+# ---------------------------------------------------------
+
+table_s4 <- tibble::tribble(
+  ~experiment_label, ~experiment_num, ~prediction_file, ~file_exists,
+  "Experiment 1: Light-only gradient", 9.2, file_exp1_preds, file.exists(file_exp1_preds),
+  "Experiment 2: Defined particles", 10.2, file_exp2_preds, file.exists(file_exp2_preds),
+  "Experiment 3: Brake-wear size", 11.2, file_exp3_preds, file.exists(file_exp3_preds),
+  "Experiment 4: Field-derived SPM", 8.2, file_exp4_preds, file.exists(file_exp4_preds)
+) |>
+  dplyr::mutate(
+    n_rows = c(
+      if (!is.null(pred_exp1)) nrow(pred_exp1) else 0L,
+      if (!is.null(pred_exp2)) nrow(pred_exp2) else 0L,
+      if (!is.null(pred_exp3)) nrow(pred_exp3) else 0L,
+      if (!is.null(pred_exp4)) nrow(pred_exp4) else 0L
+    )
+  )
+
+readr::write_csv(table_s4, file_table_s4)
+
+cat("Table S4 written to:\n")
+cat(file_table_s4, "\n\n")
+
+# ---------------------------------------------------------
+# 13. Fig S1: QC flow / exclusion summary
+# ---------------------------------------------------------
+
+p_figs1 <- NULL
+
+if (!is.null(exclusion_summary) && nrow(exclusion_summary) > 0) {
+  plot_s1_excl <- exclusion_summary |>
+    dplyr::mutate(
+      exclusion_label = dplyr::coalesce(
+        dplyr::if_else("exclusion_label" %in% names(.), as.character(exclusion_label), NA_character_),
+        dplyr::if_else("exclusion_rule" %in% names(.), as.character(exclusion_rule), NA_character_)
+      )
+    )
+
+  p_figs1 <- ggplot2::ggplot(
+    plot_s1_excl,
+    ggplot2::aes(
+      x = stats::reorder(exclusion_label, n_excluded_by_rule),
+      y = n_excluded_by_rule
+    )
+  ) +
+    ggplot2::geom_col(fill = "grey55") +
+    ggplot2::coord_flip() +
+    ggplot2::labs(
+      title = "QC exclusion summary",
+      x = NULL,
+      y = "Rows excluded"
+    )
+}
+
+saved_figs1 <- save_supp_figure(
+  p_figs1,
+  "FigS1_qc_flow_summary",
+  "Summary of explicit exclusions applied in the QC pipeline. Bars show the number of rows excluded by each pre-specified exclusion rule.",
+  height = "standard"
+)
+
+# ---------------------------------------------------------
+# 14. Fig S2: EDA distributions
+# ---------------------------------------------------------
+
+plot_eda_dat <- derived_dat |>
+  dplyr::mutate(
+    total_cells = mobile_cell_count + stationary_cell_count,
+    motility_ratio = dplyr::if_else(
+      total_cells > 0,
+      mobile_cell_count / total_cells,
+      NA_real_
+    )
+  )
+
+response_long <- plot_eda_dat |>
+  tidyr::pivot_longer(
+    cols = dplyr::all_of(c("mobile_cell_count", "stationary_cell_count", "total_cells")),
+    names_to = "response_variable",
+    values_to = "value"
+  )
+
+p_s2_counts <- ggplot2::ggplot(
+  response_long,
+  ggplot2::aes(x = value)
+) +
+  ggplot2::geom_histogram(
+    bins = 30,
+    fill = "grey70",
+    colour = "white"
+  ) +
+  ggplot2::facet_wrap(~ response_variable, scales = "free", ncol = 1) +
+  ggplot2::labs(
+    title = "EDA distributions of response counts",
+    x = "Count",
+    y = "Frequency"
+  )
+
+p_s2_ratio <- ggplot2::ggplot(
+  plot_eda_dat,
+  ggplot2::aes(x = motility_ratio)
+) +
+  ggplot2::geom_histogram(
+    bins = 30,
+    fill = "grey50",
+    colour = "white"
+  ) +
+  ggplot2::labs(
+    title = "EDA distribution of motility ratio",
+    x = "Motile fraction",
+    y = "Frequency"
+  )
+
+p_figs2 <- NULL
+if (requireNamespace("patchwork", quietly = TRUE)) {
+  p_figs2 <- p_s2_counts / p_s2_ratio
+} else {
+  p_figs2 <- p_s2_counts
+}
+
+saved_figs2 <- save_supp_figure(
+  p_figs2,
+  "FigS2_eda_distributions",
+  "Exploratory distributions of raw mobile, stationary, and total cell counts together with the derived motility ratio. These plots are descriptive only.",
+  height = "tall"
+)
+
+# ---------------------------------------------------------
+# 15. Fig S3: Model comparison summary
+# ---------------------------------------------------------
+
+p_figs3 <- NULL
+
+if (nrow(table_s3) > 0 && all(c("experiment_label", "model", "delta_aic") %in% names(table_s3))) {
+  p_figs3 <- ggplot2::ggplot(
+    table_s3,
+    ggplot2::aes(
+      x = stats::reorder(model, delta_aic),
+      y = delta_aic
+    )
+  ) +
+    ggplot2::geom_col(fill = "grey55") +
+    ggplot2::facet_wrap(~ experiment_label, scales = "free_y") +
+    ggplot2::coord_flip() +
+    ggplot2::labs(
+      title = "Sensitivity and model comparison summary",
+      x = NULL,
+      y = expression(Delta*AIC)
+    )
+}
+
+saved_figs3 <- save_supp_figure(
+  p_figs3,
+  "FigS3_model_comparison_summary",
+  "Model comparison summary across experiments, showing delta AIC values for main and sensitivity models within each experiment-specific analysis.",
+  height = "tall"
+)
+
+# ---------------------------------------------------------
+# 16. Fig S4: Optional pilot mineral gradient placeholder
+# ---------------------------------------------------------
+
+p_figs4 <- NULL
+pilot_available <- FALSE
+
+# Placeholder logic only. This remains optional unless a
+# pilot mineral gradient dataset/output is later added.
+if (FALSE) {
+  pilot_available <- TRUE
+}
+
+saved_figs4 <- character(0)
+if (pilot_available) {
+  saved_figs4 <- save_supp_figure(
+    p_figs4,
+    "FigS4_optional_pilot_mineral_gradient",
+    "Optional supplementary figure for pilot mineral gradient data, included only if the relevant pilot dataset is available.",
+    height = "standard"
+  )
+}
+
+# ---------------------------------------------------------
+# 17. Supplementary manifest
+# ---------------------------------------------------------
+
+supp_manifest <- tibble::tribble(
+  ~item_name, ~item_type, ~included, ~n_rows_or_files,
+  "TableS1_qc_exclusion_summary", "table", file.exists(file_table_s1), if (file.exists(file_table_s1)) nrow(table_s1) else 0L,
+  "TableS2_eda_summary", "table", file.exists(file_table_s2), if (file.exists(file_table_s2)) nrow(table_s2) else 0L,
+  "TableS3_model_comparison_detail", "table", file.exists(file_table_s3), if (file.exists(file_table_s3)) nrow(table_s3) else 0L,
+  "TableS4_prediction_file_manifest", "table", file.exists(file_table_s4), if (file.exists(file_table_s4)) nrow(table_s4) else 0L,
+  "FigS1_qc_flow_summary", "figure", !is.null(p_figs1), length(saved_figs1),
+  "FigS2_eda_distributions", "figure", !is.null(p_figs2), length(saved_figs2),
+  "FigS3_model_comparison_summary", "figure", !is.null(p_figs3), length(saved_figs3),
+  "FigS4_optional_pilot_mineral_gradient", "figure", pilot_available, length(saved_figs4)
+)
+
+readr::write_csv(supp_manifest, file_manifest)
+
+cat("Supplementary manifest written to:\n")
+cat(file_manifest, "\n\n")
+
+# ---------------------------------------------------------
+# 18. Write log
+# ---------------------------------------------------------
+
+all_saved_supp_figures <- c(saved_figs1, saved_figs2, saved_figs3, saved_figs4)
+
+sink(file_supp_log)
+cat("SPM Analysis - 12_supplementary_outputs log\n")
+cat("Generated:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n\n")
+
+cat("Project:\n")
+cat(project_title, "\n")
+cat("Manuscript:\n")
+cat(manuscript_short, "\n\n")
+
+cat("Input datasets:\n")
+cat(attr(qc_dat, "source_path"), "\n")
+cat(attr(ready_dat, "source_path"), "\n")
+cat(attr(derived_dat, "source_path"), "\n\n")
+
+cat("QC dataset rows:\n")
+cat(nrow(qc_dat), "\n\n")
+
+cat("Analysis-ready dataset rows (MS4 block):\n")
+cat(nrow(ready_dat), "\n\n")
+
+cat("Derived dataset rows (MS4 block):\n")
+cat(nrow(derived_dat), "\n\n")
+
+cat("Table S1:\n")
+print(table_s1)
+cat("\n")
+
+cat("Table S2:\n")
+print(table_s2)
+cat("\n")
+
+cat("Table S3:\n")
+print(table_s3)
+cat("\n")
+
+cat("Table S4:\n")
+print(table_s4)
+cat("\n")
+
+cat("Supplementary manifest:\n")
+print(supp_manifest)
+cat("\n")
+
+cat("Saved supplementary figures:\n")
+if (length(all_saved_supp_figures) == 0) {
+  cat("No supplementary figures were automatically saved.\n")
+} else {
+  cat(paste(all_saved_supp_figures, collapse = "\n"), "\n")
+}
+cat("\n")
+
+cat("Session information:\n\n")
+print(utils::sessionInfo())
+sink()
+
+cat("Supplementary outputs log written to:\n")
+cat(file_supp_log, "\n\n")
+
+# ---------------------------------------------------------
+# 19. Console summary
+# ---------------------------------------------------------
+
+cat("Supplementary manifest:\n")
+print(supp_manifest)
+cat("\n")
+
+cat("12 Supplementary outputs completed.\n\n")
+
+cat("========================================================\n")
+cat("SCRIPT 12 COMPLETE: SUPPLEMENTARY OUTPUTS\n")
+cat("End time:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("========================================================\n\n")

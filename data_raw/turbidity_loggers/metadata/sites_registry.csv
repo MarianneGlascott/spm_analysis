@@ -1,0 +1,67 @@
+site_ref,lat,long,site_code,substrate,description,,kelp_LD,Kelp_LH,Kelp_SL
+S1,50.8,-0.23,S1,,Shoreham Wastewater Outflow,,0,0,0
+S2,50.8,-0.26,S2,,West of Mi Own Shipwreck,,0,0,0
+S3,50.77,-0.34,S3,,Worthing Wastewater Outflow near site 5,,0,0,0
+S4,50.78,-0.4,S4,,Nr Monitoring Site 8,,0,0,0
+S5,50.79,-0.35,S5,,L. hyperborea confirmed site,,0,1,0
+S6, 50.8076666667,-0.33,S6,,Beacham Overflow diffuser,,0,0,0
+S7,50.82,-0.3,S7,,Church Rocks,,0,0,0
+S8,50.78,-0.3,S8,,Outside trawling exclusion zone,,0,0,0
+S9,50.79,-0.35,S9,,L. hyperborea confirmed site 2.5km SW of Worthing Pier,,0,1,0
+S10,50.68,-0.8,S10,,L. hyperborea confirmed site Pullar Bank,,0,1,0
+S12,50.8,-0.29,S12,,within trawling,,0,0,0
+S13,50.81,-0.35,S13,,inshore site,,0,0,0
+S14,50.82,-0.3,S14,,Physical Geography field trip 12/10/2023 Gp2,,0,0,0
+S15,50.82,-0.25,S15,,Physical Geography field trip 12/10/2023 Gp3,,0,0,0
+S16,50.83,-0.27,S16,,"Physical Geography field trip 12/10/2023 Gp1, New Dawn Berth",,0,0,0
+S17,50.7,-0.77,S17,,Shallows in Pullar Bank area,,0,0,0
+S18,50.73,-0.49,S18,,Rustington buoy,,0,0,0
+S19,50.84,-0.3,S19,,Shoreham Airport,,0,0,0
+S20,50.908602,-0.279855,S20,,"Adur tributary, chalk stream",,0,0,0
+S21,50.937302,-0.300641,S21,,Tidal River Adur,,0,0,0
+B1,50.82,-0.2,B1,Gravel-cobbles,Monitoring site 1,,0,0,0
+B2,50.81,-0.21,B2,Gravel-cobbles,Monitoring site 2,,0,0,0
+B3,50.78,-0.21,B3,Sand,Monitoring site 3,,0,0,0
+B4,50.82,-0.3,B4,Gravel-cobbles,Monitoring site 4,,0,0,0
+B5,50.8,-0.29,B5,Mixed sediment,Monitoring site 5,,0,0,0
+B6,50.78,-0.29,B6,Mixed sediment,Monitoring site 6,,0,0,0
+B7,50.8,-0.41,B7,Gravel-cobbles,Monitoring site 7,,0,0,0
+B8,50.78,-0.41,B8,Gravel-cobbles,Monitoring site 8,,0,0,0
+B9,50.76,-0.41,B9,Rocky reef,Monitoring site 9,,0,0,0
+B10,50.8,-0.49,B10,Gravel-cobbles,Monitoring site 10,,0,0,0
+B11,50.79,-0.49,B11,Gravel-cobbles,Monitoring site 11,,0,0,0
+B12,50.76,-0.49,B12,Cobbles and pebbles,Monitoring site 12,,0,0,0
+B13,50.79,-0.59,B13,Mixed sediment,Monitoring site 13,,0,0,0
+B14,50.77,-0.59,B14,Gravel-cobbles,Monitoring site 14,,0,0,0
+B15,50.75,-0.59,B15,,Monitoring site 15,,0,0,0
+B16,50.78,-0.66,B16,Rocky reef,Monitoring site 16,,0,0,0
+B17,50.76,-0.66,B17,Gravel-cobbles,Monitoring site 17,,0,0,0
+B18,50.74,-0.65,B18,Mixed sediment,Monitoring site 18,,0,0,0
+B19,50.77,-0.72,B19,Gravel-cobbles,Monitoring site 19,,0,0,0
+B20,50.74,-0.71,B20,Gravel-cobbles,Monitoring site 20,,0,0,0
+B21,50.72,-0.69,B21,Gravel-cobbles,Monitoring site 21,,0,0,0
+B22,50.72,-0.77,B22,Gravel-cobbles,Monitoring site 22,,0,0,0
+B23,50.71,-0.76,B23,Gravel-cobbles,Monitoring site 23,,0,0,0
+B24,50.71,-0.75,B24,Gravel-cobbles,Monitoring site 24,,0,0,0
+B25,50.71,-0.75,B25,Gravel-cobbles,Monitoring site 25,,0,0,0
+B26,50.68,-0.73,B26,Gravel-cobbles,Monitoring site 26,,0,0,0
+B27,50.74,-0.41,B27,Gravel-cobbles,Monitoring site 27,,0,0,0
+B28,50.74,-0.44,B28,Gravel-cobbles,Monitoring site 28,,0,0,0
+B29,50.74,-0.48,B29,Gravel-cobbles,Monitoring site 29,,0,0,0
+B30,50.68,-0.81,B30,Rocky reef,Monitoring site 30 (Boulder Bank),,0,0,0
+B31,50.68,-0.82,B31,Rocky reef,Monitoring site 31 (Pullar Bank),,0,0,0
+BR,50.77,-0.67,BR,Rocky reef,Bognor Regis Internal reference (mixed kelp/seaweed),,1,0,1
+EB,50.75,0.27,EB,Rocky reef - green stone,Eastbourne External reference (established kelp bed),,1,1,1
+DV,51.11,1.3,DV,Rocky reef- chalk,Dover External reference (established kelp bed),,1,1,1
+HW,51.935684,1.290428,HW,,Harwich,,1,0,0
+S22,50.756023,0.15535736,CH,,Cuckmere Haven,,0,0,0
+S23,51.3465308,1.4423355,DG,,Dumpton Gap,,0,0,0
+S24,51.3952363,1.4078266,WB,,Walpole Bay,,0,0,0
+S25,51.150241,1.385554,SMB,Rocky reef- chalk,St Margarets Bay,,1,0,0
+S26,50.805523,-0.543528,LH,Sand,Littlehampton,,0,0,0
+S27,50.7846564,0.0137709,PH,,Peacehaven,,1,0,1
+S28,51.107718,1.282291,SH,Rocky reef- chalk,Samphire Hoe,,1,0,0
+S29,50.7853135,0.0137408,PH,,Peacehaven - below Cornwall Avenue,,1,0,1
+S30,50.7850394,0.0146204,PH,,Peacehaven - below Cornwall Avenue 2,,1,0,1
+S31,50.784499,0.0218268,PH,,Peacehaven - Friars Bay Educational Conservation Area,,0,0,0
+S32,50.7845334,0.0178374,PH,,Peacehaven - Frars Bay West Edge,,0,0,0

@@ -16,3 +16,9 @@ models/
 # OS cruft
 .DS_Store
 Thumbs.db
+data_raw/turbidity_loggers/
+*.mp4
+*.avi
+*.tif
+*.tiff
+*.xlsx

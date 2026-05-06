@@ -1,0 +1,366 @@
+# =========================================================
+# Script title: 01_setup_packages_and_paths.R
+# Project: SPM Analysis
+# Author: Marianne Glascott
+# Affiliation: School of Life Sciences, University of Sussex
+# Manuscript: Manuscript 4
+# Purpose: Set up packages, project paths, helper scripts,
+#          global options, plotting defaults, and reusable
+#          directory objects for the analysis pipeline.
+# Inputs: Project directory structure; renv environment;
+#         helper scripts in /R
+# Outputs: Console log messages; verified directory objects;
+#          global objects for use in downstream scripts
+# Date created: 24 February 2026
+# Last updated: 26 March 2026
+# Notes/dependencies:
+# - This script should be run first.
+# - It does not import or modify any data.
+# - It prepares a clean, explicit, reproducible environment.
+# - Downstream scripts assume that package loading,
+#   path objects, and helper functions have been setup.
+# =========================================================
+
+cat("\n========================================================\n")
+cat("SCRIPT 01: SETUP PACKAGES AND PATHS\n")
+cat("Start time:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("========================================================\n\n")
+
+# ---------------------------------------------------------
+# 1. Basic safety checks
+# ---------------------------------------------------------
+
+if (!requireNamespace("here", quietly = TRUE)) {
+  stop(
+    "Package 'here' is required but is not installed. Please install it before running this script.",
+    call. = FALSE
+  )
+}
+
+project_root <- here::here()
+
+cat("Project root detected as:\n")
+cat(project_root, "\n\n")
+
+# ---------------------------------------------------------
+# 2. Activate renv if available
+# ---------------------------------------------------------
+
+if (file.exists(file.path(project_root, "renv", "activate.R"))) {
+  source(file.path(project_root, "renv", "activate.R"))
+  cat("renv activated successfully.\n")
+} else {
+  cat("No renv/activate.R found. Proceeding without explicit renv activation.\n")
+}
+
+cat("\n")
+
+# ---------------------------------------------------------
+# 3. Define required package set
+# ---------------------------------------------------------
+
+required_packages <- c(
+  "here",
+  "readr",
+  "dplyr",
+  "tidyr",
+  "stringr",
+  "forcats",
+  "lubridate",
+  "janitor",
+  "purrr",
+  "tibble",
+  "ggplot2",
+  "scales",
+  "glmmTMB",
+  "DHARMa",
+  "broom",
+  "broom.mixed",
+  "emmeans",
+  "performance",
+  "patchwork",
+  "flextable",
+  "gt",
+  "yaml"
+)
+
+optional_packages <- c(
+  "arrow",
+  "fs",
+  "cli",
+  "ragg"
+)
+
+missing_required <- required_packages[
+  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+]
+
+if (length(missing_required) > 0) {
+  stop(
+    paste0(
+      "The following required package(s) are missing:\n- ",
+      paste(missing_required, collapse = "\n- "),
+      "\nPlease install or restore them before proceeding."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("All required packages are available.\n")
+
+missing_optional <- optional_packages[
+  !vapply(optional_packages, requireNamespace, logical(1), quietly = TRUE)
+]
+
+if (length(missing_optional) > 0) {
+  cat("Optional package(s) not available:\n")
+  cat("-", paste(missing_optional, collapse = "\n- "), "\n")
+  cat("Pipeline will proceed where possible without them.\n")
+} else {
+  cat("All optional packages are available.\n")
+}
+
+cat("\nLoading required packages...\n")
+
+invisible(
+  lapply(
+    required_packages,
+    function(pkg) {
+      suppressPackageStartupMessages(
+        library(pkg, character.only = TRUE)
+      )
+    }
+  )
+)
+
+cat("Required packages loaded successfully.\n\n")
+
+# ---------------------------------------------------------
+# 4. Define and verify project directory structure
+# ---------------------------------------------------------
+
+dir_data_raw      <- file.path(project_root, "data_raw")
+dir_data_clean    <- file.path(project_root, "data_clean")
+dir_data_derived  <- file.path(project_root, "data_derived")
+dir_scripts       <- file.path(project_root, "scripts")
+dir_R             <- file.path(project_root, "R")
+dir_outputs       <- file.path(project_root, "outputs")
+dir_figures       <- file.path(project_root, "outputs", "figures")
+dir_tables        <- file.path(project_root, "outputs", "tables")
+dir_models        <- file.path(project_root, "outputs", "models")
+dir_logs          <- file.path(project_root, "outputs", "logs")
+dir_reports       <- file.path(project_root, "reports")
+
+required_dirs <- c(
+  dir_data_raw,
+  dir_data_clean,
+  dir_data_derived,
+  dir_scripts,
+  dir_R,
+  dir_outputs,
+  dir_figures,
+  dir_tables,
+  dir_models,
+  dir_logs,
+  dir_reports
+)
+
+missing_dirs <- required_dirs[!dir.exists(required_dirs)]
+
+if (length(missing_dirs) > 0) {
+  stop(
+    paste0(
+      "The following required directory/directories are missing:\n- ",
+      paste(missing_dirs, collapse = "\n- "),
+      "\nPlease create them before continuing."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Required directory structure verified.\n\n")
+
+# ---------------------------------------------------------
+# 5. Define key file paths
+# ---------------------------------------------------------
+
+file_raw_master_csv <- file.path(dir_data_raw, "All_data_cleaned.csv")
+
+cat("Key file path registered:\n")
+cat("Raw master data file:", file_raw_master_csv, "\n\n")
+
+if (file.exists(file_raw_master_csv)) {
+  cat("Primary raw data file found.\n\n")
+} else {
+  cat("Primary raw data file not yet found at expected location.\n")
+  cat("This is acceptable at setup stage only if data import will be configured later.\n\n")
+}
+
+# ---------------------------------------------------------
+# 6. Global options for reproducibility and readability
+# ---------------------------------------------------------
+
+options(
+  stringsAsFactors = FALSE,
+  scipen = 999,
+  dplyr.summarise.inform = FALSE,
+  tibble.width = Inf,
+  pillar.sigfig = 6
+)
+
+set.seed(123)
+
+cat("Global options set.\n")
+cat("Random seed set to 123.\n\n")
+
+# ---------------------------------------------------------
+# 7. Define project metadata objects
+# ---------------------------------------------------------
+
+project_title      <- "SPM Analysis"
+manuscript_title   <- "Disentangling Optical, Concentration, and Compositional Effects of Suspended Particles on Kelp Zoospore Motility"
+manuscript_short   <- "Manuscript 4"
+github_repo        <- "spm_analysis"
+backup_location    <- "MEG6 hard drive"
+focal_species      <- "Laminaria digitata"
+ld_main_colour     <- "#c09c0e"
+
+cat("Project metadata objects created.\n\n")
+
+# ---------------------------------------------------------
+# 8. Define default plotting objects
+# ---------------------------------------------------------
+
+kelp_palette <- c(
+  "LIGHT"     = "#c09c0e",
+  "SAND"      = "#c2b280",
+  "KAOLINITE" = "#a6bddb",
+  "PEAT"      = "#6b4f3a",
+  "BWC"       = "#6e6e6e",
+  "BWF"       = "#2f2f2f",
+  "SPM"       = "#2c7f62",
+  "CONTROL"   = "#1f4e79"
+)
+
+figure_width_one_col <- 85 / 25.4
+figure_width_two_col <- 178 / 25.4
+figure_height_std    <- 110 / 25.4
+figure_dpi           <- 600
+
+theme_set(
+  ggplot2::theme_bw(base_size = 11) +
+    ggplot2::theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(linewidth = 0.2),
+      strip.background = element_rect(fill = "grey92", colour = "grey70"),
+      legend.position = "right",
+      plot.title = element_text(face = "bold"),
+      axis.title = element_text(face = "plain")
+    )
+)
+
+cat("Default plotting objects created.\n")
+cat("kelp_palette defined.\n")
+cat("Global ggplot theme set.\n\n")
+
+# ---------------------------------------------------------
+# 9. Source helper scripts where present
+# ---------------------------------------------------------
+
+helper_files <- c(
+  "helpers_paths.R",
+  "helpers_theme.R",
+  "helpers_save_figures.R",
+  "helpers_labels.R",
+  "helpers_tables.R",
+  "helpers_model_checks.R"
+)
+
+helper_paths <- file.path(dir_R, helper_files)
+
+helpers_found <- helper_paths[file.exists(helper_paths)]
+helpers_missing <- helper_paths[!file.exists(helper_paths)]
+
+if (length(helpers_found) > 0) {
+  cat("Sourcing helper scripts:\n")
+  for (helper in helpers_found) {
+    source(helper)
+    cat("- Loaded:", basename(helper), "\n")
+  }
+  cat("\n")
+} else {
+  cat("No helper scripts found yet in /R.\n\n")
+}
+
+if (length(helpers_missing) > 0) {
+  cat("Helper scripts not yet present:\n")
+  for (helper in helpers_missing) {
+    cat("- Missing:", basename(helper), "\n")
+  }
+  cat("This is acceptable at setup stage if these helpers are still being developed.\n\n")
+}
+
+# ---------------------------------------------------------
+# 10. Create simple run manifest object
+# ---------------------------------------------------------
+
+run_manifest <- list(
+  project_title = project_title,
+  manuscript_title = manuscript_title,
+  manuscript_short = manuscript_short,
+  project_root = project_root,
+  raw_data_file = file_raw_master_csv,
+  github_repo = github_repo,
+  backup_location = backup_location,
+  focal_species = focal_species,
+  setup_run_time = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+)
+
+cat("Run manifest object created.\n\n")
+
+# ---------------------------------------------------------
+# 11. Optional setup log
+# ---------------------------------------------------------
+
+setup_log_path <- file.path(
+  dir_logs,
+  paste0("01_setup_log_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".txt")
+)
+
+sink(setup_log_path)
+cat("SPM Analysis - setup log\n")
+cat("Generated:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n\n")
+cat("Project root:\n")
+cat(project_root, "\n\n")
+cat("Raw master file path:\n")
+cat(file_raw_master_csv, "\n\n")
+cat("Required packages:\n")
+cat(paste(required_packages, collapse = ", "), "\n\n")
+cat("Optional packages:\n")
+cat(paste(optional_packages, collapse = ", "), "\n\n")
+cat("Session information:\n\n")
+print(utils::sessionInfo())
+sink()
+
+cat("Setup log written to:\n")
+cat(setup_log_path, "\n\n")
+
+# ---------------------------------------------------------
+# 12. Final console summary
+# ---------------------------------------------------------
+
+cat("Objects now available for downstream scripts include:\n")
+cat("- project_root\n")
+cat("- dir_data_raw, dir_data_clean, dir_data_derived\n")
+cat("- dir_scripts, dir_R, dir_outputs, dir_figures, dir_tables, dir_models, dir_logs, dir_reports\n")
+cat("- file_raw_master_csv\n")
+cat("- kelp_palette\n")
+cat("- figure_width_one_col, figure_width_two_col, figure_height_std, figure_dpi\n")
+cat("- project_title, manuscript_title, manuscript_short, focal_species\n")
+cat("- run_manifest\n\n")
+
+cat("========================================================\n")
+cat("SCRIPT 01 COMPLETE: SETUP PACKAGES AND PATHS\n")
+cat("End time:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("========================================================\n\n")
+

@@ -1,0 +1,594 @@
+# =========================================================
+# Script title: 11_tables_main.R
+# Project: SPM Analysis
+# Author: Marianne Glascott
+# Affiliation: School of Life Sciences, University of Sussex
+# Manuscript: Manuscript 4
+# Purpose: Generate the main publication tables for
+#          Manuscript 4 from the derived dataset and saved
+#          experiment-specific model outputs.
+# Inputs:
+# - data_derived/ms4_analysis_derived.csv or .rds
+# - outputs/tables/06_exp1_light_dataset_summary.csv
+# - outputs/tables/07_exp2_defined_particles_dataset_summary.csv
+# - outputs/tables/08_exp3_brake_size_dataset_summary.csv
+# - outputs/tables/09_exp4_field_spm_dataset_summary.csv
+# - outputs/tables/06_exp1_light_model_summary_table.csv
+# - outputs/tables/07_exp2_defined_particles_model_summary_table.csv
+# - outputs/tables/08_exp3_brake_size_model_summary_table.csv
+# - outputs/tables/09_exp4_field_spm_model_summary_table.csv
+# - outputs/tables/06_exp1_light_model_comparison.csv
+# - outputs/tables/07_exp2_defined_particles_model_comparison.csv
+# - outputs/tables/08_exp3_brake_size_model_comparison.csv
+# - outputs/tables/09_exp4_field_spm_model_comparison.csv
+# Outputs:
+# - outputs/tables/Table1_experimental_design_summary.csv
+# - outputs/tables/Table2_dataset_summary.csv
+# - outputs/tables/Table3_model_summary_table.csv
+# - outputs/tables/Table4_model_comparison_summary.csv
+# - outputs/tables/11_tables_main_manifest.csv
+# - outputs/logs/11_tables_main_log_*.txt
+# Date created: 26 March 2026
+# Last updated: 26 March 2026
+# Notes/dependencies:
+# - Run 01_setup_packages_and_paths.R first.
+# - Run 04_derive_variables.R before this script.
+# - Run 06-09 model scripts before this script.
+# - Tables follow the publication plan:
+#   Table 1 Experimental design summary
+#   Table 2 Dataset summary
+#   Table 3 Model summary table
+#   Table 4 Model comparison / sensitivity summary
+# - The pipeline is manuscript-driven and restricted to the
+#   Manuscript 4 experimental block:
+#   experiment_num %in% c(8.2, 9.2, 10.2, 11.2)
+# =========================================================
+
+cat("\n========================================================\n")
+cat("SCRIPT 11: TABLES MAIN\n")
+cat("Start time:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("========================================================\n\n")
+
+# ---------------------------------------------------------
+# 1. Check setup objects
+# ---------------------------------------------------------
+
+required_objects <- c(
+  "project_root",
+  "dir_data_derived",
+  "dir_tables",
+  "dir_logs",
+  "project_title",
+  "manuscript_short"
+)
+
+missing_objects <- required_objects[!vapply(required_objects, exists, logical(1), inherits = TRUE)]
+
+if (length(missing_objects) > 0) {
+  stop(
+    paste0(
+      "The following required setup object(s) are missing:\n- ",
+      paste(missing_objects, collapse = "\n- "),
+      "\nPlease run 01_setup_packages_and_paths.R first."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Setup objects verified.\n\n")
+
+# ---------------------------------------------------------
+# 2. Source helper scripts if available
+# ---------------------------------------------------------
+
+helper_files <- c(
+  "helpers_labels.R",
+  "helpers_tables.R"
+)
+
+for (hf in helper_files) {
+  helper_path <- file.path(project_root, "R", hf)
+  if (file.exists(helper_path)) {
+    source(helper_path)
+    cat("Loaded helper:", hf, "\n")
+  }
+}
+cat("\n")
+
+# ---------------------------------------------------------
+# 3. Define paths
+# ---------------------------------------------------------
+
+file_input_rds <- file.path(dir_data_derived, "ms4_analysis_derived.rds")
+file_input_csv <- file.path(dir_data_derived, "ms4_analysis_derived.csv")
+
+file_exp1_dataset_summary <- file.path(dir_tables, "06_exp1_light_dataset_summary.csv")
+file_exp2_dataset_summary <- file.path(dir_tables, "07_exp2_defined_particles_dataset_summary.csv")
+file_exp3_dataset_summary <- file.path(dir_tables, "08_exp3_brake_size_dataset_summary.csv")
+file_exp4_dataset_summary <- file.path(dir_tables, "09_exp4_field_spm_dataset_summary.csv")
+
+file_exp1_model_summary <- file.path(dir_tables, "06_exp1_light_model_summary_table.csv")
+file_exp2_model_summary <- file.path(dir_tables, "07_exp2_defined_particles_model_summary_table.csv")
+file_exp3_model_summary <- file.path(dir_tables, "08_exp3_brake_size_model_summary_table.csv")
+file_exp4_model_summary <- file.path(dir_tables, "09_exp4_field_spm_model_summary_table.csv")
+
+file_exp1_model_comp <- file.path(dir_tables, "06_exp1_light_model_comparison.csv")
+file_exp2_model_comp <- file.path(dir_tables, "07_exp2_defined_particles_model_comparison.csv")
+file_exp3_model_comp <- file.path(dir_tables, "08_exp3_brake_size_model_comparison.csv")
+file_exp4_model_comp <- file.path(dir_tables, "09_exp4_field_spm_model_comparison.csv")
+
+file_table1 <- file.path(dir_tables, "Table1_experimental_design_summary.csv")
+file_table2 <- file.path(dir_tables, "Table2_dataset_summary.csv")
+file_table3 <- file.path(dir_tables, "Table3_model_summary_table.csv")
+file_table4 <- file.path(dir_tables, "Table4_model_comparison_summary.csv")
+file_table_manifest <- file.path(dir_tables, "11_tables_main_manifest.csv")
+
+timestamp_now <- format(Sys.time(), "%Y%m%d_%H%M%S")
+file_tables_log <- file.path(
+  dir_logs,
+  paste0("11_tables_main_log_", timestamp_now, ".txt")
+)
+
+# ---------------------------------------------------------
+# 4. Import derived dataset
+# ---------------------------------------------------------
+
+if (file.exists(file_input_rds)) {
+  dat <- readRDS(file_input_rds)
+  input_source_used <- file_input_rds
+} else if (file.exists(file_input_csv)) {
+  dat <- readr::read_csv(file_input_csv, show_col_types = FALSE, progress = FALSE)
+  input_source_used <- file_input_csv
+} else {
+  stop(
+    paste0(
+      "No derived analysis dataset found.\nExpected one of:\n- ",
+      file_input_rds,
+      "\n- ",
+      file_input_csv,
+      "\nPlease run 04_derive_variables.R first."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Derived analysis dataset loaded from:\n")
+cat(input_source_used, "\n")
+cat("Rows:", nrow(dat), "\n")
+cat("Columns:", ncol(dat), "\n\n")
+
+# ---------------------------------------------------------
+# 5. Restrict to Manuscript 4 block
+# ---------------------------------------------------------
+
+ms4_experiment_nums <- c(8.2, 9.2, 10.2, 11.2)
+
+dat <- dat |>
+  dplyr::mutate(
+    experiment_num = suppressWarnings(as.numeric(as.character(experiment_num))),
+    experiment_type = as.character(experiment_type)
+  ) |>
+  dplyr::filter(
+    !is.na(experiment_num),
+    experiment_num %in% ms4_experiment_nums
+  )
+
+cat("Restricted to Manuscript 4 experiment block.\n")
+cat("Rows retained:", nrow(dat), "\n\n")
+
+# ---------------------------------------------------------
+# 6. Small local helpers
+# ---------------------------------------------------------
+
+read_if_exists <- function(path) {
+  if (!file.exists(path)) return(NULL)
+  readr::read_csv(path, show_col_types = FALSE, progress = FALSE)
+}
+
+collapse_sorted_unique <- function(x, sep = ", ") {
+  x <- unique(x[!is.na(x)])
+  x <- x[order(x)]
+  if (length(x) == 0) return(NA_character_)
+  paste(x, collapse = sep)
+}
+
+safe_n_distinct <- function(x) {
+  dplyr::n_distinct(x, na.rm = TRUE)
+}
+
+safe_min <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0) return(NA_real_)
+  min(x)
+}
+
+safe_max <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0) return(NA_real_)
+  max(x)
+}
+
+# ---------------------------------------------------------
+# 7. Load experiment-specific outputs
+# ---------------------------------------------------------
+
+sum_exp1 <- read_if_exists(file_exp1_dataset_summary)
+sum_exp2 <- read_if_exists(file_exp2_dataset_summary)
+sum_exp3 <- read_if_exists(file_exp3_dataset_summary)
+sum_exp4 <- read_if_exists(file_exp4_dataset_summary)
+
+modsum_exp1 <- read_if_exists(file_exp1_model_summary)
+modsum_exp2 <- read_if_exists(file_exp2_model_summary)
+modsum_exp3 <- read_if_exists(file_exp3_model_summary)
+modsum_exp4 <- read_if_exists(file_exp4_model_summary)
+
+modcomp_exp1 <- read_if_exists(file_exp1_model_comp)
+modcomp_exp2 <- read_if_exists(file_exp2_model_comp)
+modcomp_exp3 <- read_if_exists(file_exp3_model_comp)
+modcomp_exp4 <- read_if_exists(file_exp4_model_comp)
+
+cat("Experiment-specific tables loaded where available.\n\n")
+
+# ---------------------------------------------------------
+# 8. Prepare experiment-specific raw subsets
+# ---------------------------------------------------------
+
+exp1_raw <- dat |>
+  dplyr::filter(experiment_num == 9.2) |>
+  dplyr::mutate(
+    lux_exposure = suppressWarnings(as.numeric(lux_exposure)),
+    days_from_start = as.integer(days_from_start)
+  )
+
+exp2_raw <- dat |>
+  dplyr::filter(experiment_num == 10.2) |>
+  dplyr::mutate(
+    ntu = suppressWarnings(as.numeric(ntu)),
+    days_from_start = as.integer(days_from_start),
+    particle_type_model = dplyr::coalesce(
+      dplyr::if_else("particle_type_plot" %in% names(.), as.character(particle_type_plot), NA_character_),
+      dplyr::if_else("particle_type" %in% names(.), as.character(particle_type), NA_character_),
+      dplyr::if_else("toxin_exposure" %in% names(.), as.character(toxin_exposure), NA_character_)
+    ),
+    particle_type_model = stringr::str_to_upper(stringr::str_squish(particle_type_model)),
+    particle_type_model = dplyr::case_when(
+      particle_type_model == "SAND" ~ "SAND",
+      particle_type_model == "KAOLINITE" ~ "KAOLINITE",
+      particle_type_model == "PEAT" ~ "PEAT",
+      particle_type_model == "CONTROL" ~ "CONTROL",
+      TRUE ~ particle_type_model
+    )
+  )
+
+exp3_raw <- dat |>
+  dplyr::filter(experiment_num == 11.2) |>
+  dplyr::mutate(
+    days_from_start = as.integer(days_from_start),
+    particle_size_class = dplyr::coalesce(
+      dplyr::if_else("size_class_plot" %in% names(.), as.character(size_class_plot), NA_character_),
+      dplyr::if_else("size_class" %in% names(.), as.character(size_class), NA_character_),
+      dplyr::if_else("particle_type_plot" %in% names(.), as.character(particle_type_plot), NA_character_),
+      dplyr::if_else("particle_type" %in% names(.), as.character(particle_type), NA_character_),
+      dplyr::if_else("toxin_exposure" %in% names(.), as.character(toxin_exposure), NA_character_)
+    ),
+    particle_size_class = stringr::str_to_upper(stringr::str_squish(particle_size_class)),
+    particle_size_class = dplyr::case_when(
+      particle_size_class %in% c("COARSE", "BWC", "BRAKE WEAR COARSE", "BRAKE_WEAR_COARSE") ~ "BWC",
+      particle_size_class %in% c("FINE", "BWF", "BRAKE WEAR FINE", "BRAKE_WEAR_FINE") ~ "BWF",
+      particle_size_class == "CONTROL" ~ "CONTROL",
+      TRUE ~ particle_size_class
+    ),
+    mass_loading_ug_l = if ("mass_loading_ug_l" %in% names(.)) suppressWarnings(as.numeric(mass_loading_ug_l)) else NA_real_
+  )
+
+exp4_raw <- dat |>
+  dplyr::filter(experiment_num == 8.2) |>
+  dplyr::mutate(
+    ntu = suppressWarnings(as.numeric(ntu)),
+    days_from_start = as.integer(days_from_start)
+  )
+
+cat("Experiment-specific raw subsets prepared.\n\n")
+
+# ---------------------------------------------------------
+# 9. Table 1: Experimental design summary
+# ---------------------------------------------------------
+
+table1 <- tibble::tribble(
+  ~experiment_num, ~experiment_label, ~exposure_metric, ~treatment_classes, ~intended_exposure_range, ~design_notes,
+  9.2,  "Experiment 1: Light-only gradient", "lux_exposure", "0, 4, 70, 117 lux", "0-117 lux", "No particles; optical effects only",
+  10.2, "Experiment 2: Defined particle concentration series", "log10(NTU + 1)", "Sand, Kaolinite, Peat", "25, 100, 400 NTU", "Matched turbidity across particle classes",
+  11.2, "Experiment 3: Brake-wear size comparison", "particle_size_class", "BWC, BWF", "Equal mass loading", "Size effect under equal mass; NTU not primary predictor",
+  8.2,  "Experiment 4: Field-derived SPM gradient", "log10(NTU + 1)", "Field SPM", "Approx. 5-500 NTU", "Natural mixed composition; NTU may be incomplete predictor"
+) |>
+  dplyr::mutate(
+    observed_days = c(
+      collapse_sorted_unique(exp1_raw$days_from_start),
+      collapse_sorted_unique(exp2_raw$days_from_start),
+      collapse_sorted_unique(exp3_raw$days_from_start),
+      collapse_sorted_unique(exp4_raw$days_from_start)
+    ),
+    n_cultures = c(
+      safe_n_distinct(exp1_raw$culture),
+      safe_n_distinct(exp2_raw$culture),
+      safe_n_distinct(exp3_raw$culture),
+      safe_n_distinct(exp4_raw$culture)
+    ),
+    n_wells = c(
+      if ("well" %in% names(exp1_raw)) safe_n_distinct(exp1_raw$well) else NA_integer_,
+      if ("well" %in% names(exp2_raw)) safe_n_distinct(exp2_raw$well) else NA_integer_,
+      if ("well" %in% names(exp3_raw)) safe_n_distinct(exp3_raw$well) else NA_integer_,
+      if ("well" %in% names(exp4_raw)) safe_n_distinct(exp4_raw$well) else NA_integer_
+    ),
+    n_videos = c(
+      if ("video_file" %in% names(exp1_raw)) safe_n_distinct(exp1_raw$video_file) else NA_integer_,
+      if ("video_file" %in% names(exp2_raw)) safe_n_distinct(exp2_raw$video_file) else NA_integer_,
+      if ("video_file" %in% names(exp3_raw)) safe_n_distinct(exp3_raw$video_file) else NA_integer_,
+      if ("video_file" %in% names(exp4_raw)) safe_n_distinct(exp4_raw$video_file) else NA_integer_
+    ),
+    n_observations = c(
+      nrow(exp1_raw),
+      nrow(exp2_raw),
+      nrow(exp3_raw),
+      nrow(exp4_raw)
+    )
+  ) |>
+  dplyr::arrange(experiment_num)
+
+readr::write_csv(table1, file_table1)
+
+cat("Table 1 written to:\n")
+cat(file_table1, "\n\n")
+
+# ---------------------------------------------------------
+# 10. Table 2: Dataset summary
+# ---------------------------------------------------------
+
+build_dataset_summary <- function(df, experiment_label) {
+  if (nrow(df) == 0) return(NULL)
+
+  df |>
+    dplyr::group_by(days_from_start) |>
+    dplyr::summarise(
+      experiment_label = experiment_label,
+      n_cultures = safe_n_distinct(culture),
+      n_wells = if ("well" %in% names(.)) safe_n_distinct(well) else NA_integer_,
+      n_videos = if ("video_file" %in% names(.)) safe_n_distinct(video_file) else NA_integer_,
+      n_observations = dplyr::n(),
+      .groups = "drop"
+    ) |>
+    dplyr::select(
+      experiment_label,
+      days_from_start,
+      n_cultures,
+      n_wells,
+      n_videos,
+      n_observations
+    )
+}
+
+table2 <- dplyr::bind_rows(
+  build_dataset_summary(exp1_raw, "Experiment 1: Light-only gradient"),
+  build_dataset_summary(exp2_raw, "Experiment 2: Defined particles"),
+  build_dataset_summary(exp3_raw, "Experiment 3: Brake-wear size"),
+  build_dataset_summary(exp4_raw, "Experiment 4: Field-derived SPM")
+) |>
+  dplyr::arrange(experiment_label, days_from_start)
+
+readr::write_csv(table2, file_table2)
+
+cat("Table 2 written to:\n")
+cat(file_table2, "\n\n")
+
+# ---------------------------------------------------------
+# 11. Table 3: Model summary table
+# ---------------------------------------------------------
+
+standardise_model_summary <- function(df, experiment_label, experiment_num_value, model_family = "binomial (logit)", random_effects = "(1 | culture)") {
+  if (is.null(df) || nrow(df) == 0) return(NULL)
+
+  out <- df |>
+    dplyr::mutate(
+      experiment_label = experiment_label,
+      experiment_num = experiment_num_value,
+      model_family = model_family,
+      random_effects = random_effects
+    )
+
+  nm <- names(out)
+
+  if (!"term" %in% nm) {
+    if ("parameter" %in% nm) out <- dplyr::rename(out, term = parameter)
+    if ("effect" %in% nm) out <- dplyr::rename(out, term = effect)
+  }
+  if (!"estimate" %in% names(out)) {
+    if ("estimate_response" %in% names(out)) out <- dplyr::rename(out, estimate = estimate_response)
+  }
+  if (!"conf_low" %in% names(out)) {
+    if ("conf.low" %in% names(out)) out <- dplyr::rename(out, conf_low = conf.low)
+    if ("conf_low_response" %in% names(out)) out <- dplyr::rename(out, conf_low = conf_low_response)
+  }
+  if (!"conf_high" %in% names(out)) {
+    if ("conf.high" %in% names(out)) out <- dplyr::rename(out, conf_high = conf.high)
+    if ("conf_high_response" %in% names(out)) out <- dplyr::rename(out, conf_high = conf_high_response)
+  }
+  if (!"statistic" %in% names(out)) {
+    if ("z.value" %in% names(out)) out <- dplyr::rename(out, statistic = z.value)
+    if ("test_statistic" %in% names(out)) out <- dplyr::rename(out, statistic = test_statistic)
+  }
+  if (!"p_value" %in% names(out)) {
+    if ("p.value" %in% names(out)) out <- dplyr::rename(out, p_value = p.value)
+    if ("p_value_raw" %in% names(out)) out <- dplyr::rename(out, p_value = p_value_raw)
+  }
+
+  keep_cols <- intersect(
+    c(
+      "experiment_label",
+      "experiment_num",
+      "model_name",
+      "term",
+      "estimate",
+      "conf_low",
+      "conf_high",
+      "statistic",
+      "p_value",
+      "model_family",
+      "random_effects",
+      "note"
+    ),
+    names(out)
+  )
+
+  out |>
+    dplyr::select(dplyr::all_of(keep_cols))
+}
+
+table3 <- dplyr::bind_rows(
+  standardise_model_summary(modsum_exp1, "Experiment 1: Light-only gradient", 9.2),
+  standardise_model_summary(modsum_exp2, "Experiment 2: Defined particles", 10.2),
+  standardise_model_summary(modsum_exp3, "Experiment 3: Brake-wear size", 11.2),
+  standardise_model_summary(modsum_exp4, "Experiment 4: Field-derived SPM", 8.2)
+) |>
+  dplyr::arrange(experiment_num, model_name, term)
+
+readr::write_csv(table3, file_table3)
+
+cat("Table 3 written to:\n")
+cat(file_table3, "\n\n")
+
+# ---------------------------------------------------------
+# 12. Table 4: Model comparison / sensitivity summary
+# ---------------------------------------------------------
+
+standardise_model_comparison <- function(df, experiment_label, experiment_num_value) {
+  if (is.null(df) || nrow(df) == 0) return(NULL)
+
+  out <- df |>
+    dplyr::mutate(
+      experiment_label = experiment_label,
+      experiment_num = experiment_num_value
+    )
+
+  if (!"model_rank" %in% names(out)) {
+    out <- out |>
+      dplyr::mutate(model_rank = dplyr::row_number())
+  }
+
+  keep_cols <- intersect(
+    c(
+      "experiment_label",
+      "experiment_num",
+      "model_rank",
+      "model",
+      "aic",
+      "delta_aic",
+      "weight",
+      "logLik",
+      "deviance",
+      "df",
+      "npar"
+    ),
+    names(out)
+  )
+
+  out |>
+    dplyr::select(dplyr::all_of(keep_cols))
+}
+
+table4 <- dplyr::bind_rows(
+  standardise_model_comparison(modcomp_exp1, "Experiment 1: Light-only gradient", 9.2),
+  standardise_model_comparison(modcomp_exp2, "Experiment 2: Defined particles", 10.2),
+  standardise_model_comparison(modcomp_exp3, "Experiment 3: Brake-wear size", 11.2),
+  standardise_model_comparison(modcomp_exp4, "Experiment 4: Field-derived SPM", 8.2)
+) |>
+  dplyr::arrange(experiment_num, model_rank)
+
+readr::write_csv(table4, file_table4)
+
+cat("Table 4 written to:\n")
+cat(file_table4, "\n\n")
+
+# ---------------------------------------------------------
+# 13. Build table manifest
+# ---------------------------------------------------------
+
+table_manifest <- tibble::tribble(
+  ~table_name, ~file_path, ~n_rows, ~included,
+  "Table1_experimental_design_summary", file_table1, if (file.exists(file_table1)) nrow(table1) else 0L, TRUE,
+  "Table2_dataset_summary", file_table2, if (file.exists(file_table2)) nrow(table2) else 0L, TRUE,
+  "Table3_model_summary_table", file_table3, if (file.exists(file_table3)) nrow(table3) else 0L, TRUE,
+  "Table4_model_comparison_summary", file_table4, if (file.exists(file_table4)) nrow(table4) else 0L, TRUE
+)
+
+readr::write_csv(table_manifest, file_table_manifest)
+
+cat("Table manifest written to:\n")
+cat(file_table_manifest, "\n\n")
+
+# ---------------------------------------------------------
+# 14. Write log
+# ---------------------------------------------------------
+
+sink(file_tables_log)
+cat("SPM Analysis - 11_tables_main log\n")
+cat("Generated:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n\n")
+
+cat("Project:\n")
+cat(project_title, "\n")
+cat("Manuscript:\n")
+cat(manuscript_short, "\n\n")
+
+cat("Input dataset:\n")
+cat(input_source_used, "\n\n")
+
+cat("MS4 dataset dimensions:\n")
+cat("Rows:", nrow(dat), "\n")
+cat("Columns:", ncol(dat), "\n\n")
+
+cat("Experiment-specific raw subset sizes:\n")
+cat("Experiment 1 rows:", nrow(exp1_raw), "\n")
+cat("Experiment 2 rows:", nrow(exp2_raw), "\n")
+cat("Experiment 3 rows:", nrow(exp3_raw), "\n")
+cat("Experiment 4 rows:", nrow(exp4_raw), "\n\n")
+
+cat("Table 1:\n")
+print(table1)
+cat("\n")
+
+cat("Table 2:\n")
+print(table2)
+cat("\n")
+
+cat("Table 3:\n")
+print(table3)
+cat("\n")
+
+cat("Table 4:\n")
+print(table4)
+cat("\n")
+
+cat("Table manifest:\n")
+print(table_manifest)
+cat("\n")
+
+cat("Session information:\n\n")
+print(utils::sessionInfo())
+sink()
+
+cat("Tables log written to:\n")
+cat(file_tables_log, "\n\n")
+
+# ---------------------------------------------------------
+# 15. Console summary
+# ---------------------------------------------------------
+
+cat("Table manifest:\n")
+print(table_manifest)
+cat("\n")
+
+cat("11 Main tables completed.\n\n")
+
+cat("========================================================\n")
+cat("SCRIPT 11 COMPLETE: TABLES MAIN\n")
+cat("End time:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("========================================================\n\n")

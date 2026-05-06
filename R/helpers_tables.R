@@ -1,0 +1,785 @@
+# =========================================================
+# Script title: helpers_tables.R
+# Project: SPM Analysis
+# Author: Marianne Glascott
+# Affiliation: School of Life Sciences, University of Sussex
+# Manuscript: Manuscript 4
+# Purpose: Define reusable helper functions for creating,
+#          formatting, labeling, and exporting publication-
+#          ready tables across the analysis pipeline.
+# Inputs: Data frames, model summary tables, QC summaries
+# Outputs: Reusable helper functions and formatted table
+#          objects for CSV, markdown, gt, and flextable
+# Date created: 25 February 2026
+# Last updated: 24 March 2026
+# Notes/dependencies:
+# - Source via 01_setup_packages_and_paths.R
+# - Designed to support the main and supplementary table
+#   outputs defined in the project brief.
+# - Uses central label helpers where available.
+# =========================================================
+
+message("Loading helper script: R/helpers_tables.R")
+
+# ---------------------------------------------------------
+# 1. Package checks
+# ---------------------------------------------------------
+
+required_table_packages <- c("dplyr", "readr", "tibble")
+
+missing_table_packages <- required_table_packages[
+  !vapply(required_table_packages, requireNamespace, logical(1), quietly = TRUE)
+]
+
+if (length(missing_table_packages) > 0) {
+  stop(
+    paste0(
+      "helpers_tables.R requires the following package(s): ",
+      paste(missing_table_packages, collapse = ", ")
+    ),
+    call. = FALSE
+  )
+}
+
+.has_gt <- requireNamespace("gt", quietly = TRUE)
+.has_flextable <- requireNamespace("flextable", quietly = TRUE)
+
+# ---------------------------------------------------------
+# 2. Table output directory helper
+# ---------------------------------------------------------
+
+get_table_dir <- function(subdir = NULL) {
+  if (exists("dir_tables", inherits = TRUE)) {
+    base_dir <- get("dir_tables", inherits = TRUE)
+  } else if (requireNamespace("here", quietly = TRUE)) {
+    base_dir <- here::here("outputs", "tables")
+  } else {
+    base_dir <- file.path("outputs", "tables")
+  }
+
+  if (!is.null(subdir) && nzchar(subdir)) {
+    base_dir <- file.path(base_dir, subdir)
+  }
+
+  if (!dir.exists(base_dir)) {
+    dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
+  }
+
+  return(base_dir)
+}
+
+# ---------------------------------------------------------
+# 3. Filename sanitising helper
+# ---------------------------------------------------------
+
+sanitize_table_filename <- function(x) {
+  x <- trimws(x)
+  x <- gsub("\\s+", "_", x)
+  x <- gsub("[^A-Za-z0-9_\\-]", "", x)
+  x <- gsub("_+", "_", x)
+  x <- gsub("^_|_$", "", x)
+  x
+}
+
+# ---------------------------------------------------------
+# 4. Safe label helper wrapper
+# ---------------------------------------------------------
+
+safe_label_variable <- function(x, plain = TRUE) {
+  if (exists("label_variable", mode = "function", inherits = TRUE)) {
+    return(label_variable(x, plain = plain))
+  }
+  x
+}
+
+safe_label_experiment <- function(x, short = FALSE) {
+  if (exists("label_experiment", mode = "function", inherits = TRUE)) {
+    return(label_experiment(x, short = short))
+  }
+  x
+}
+
+safe_label_particle_type <- function(x, short = FALSE) {
+  if (exists("label_particle_type", mode = "function", inherits = TRUE)) {
+    return(label_particle_type(x, short = short))
+  }
+  x
+}
+
+safe_label_size_class <- function(x) {
+  if (exists("label_size_class", mode = "function", inherits = TRUE)) {
+    return(label_size_class(x))
+  }
+  x
+}
+
+safe_label_table_title <- function(x) {
+  if (exists("label_table_title", mode = "function", inherits = TRUE)) {
+    return(label_table_title(x))
+  }
+  x
+}
+
+# ---------------------------------------------------------
+# 5. General numeric formatting helpers
+# ---------------------------------------------------------
+
+fmt_num <- function(x, digits = 2, drop_trailing_zeros = FALSE) {
+  if (!is.numeric(x)) {
+    return(x)
+  }
+
+  out <- formatC(x, format = "f", digits = digits)
+
+  if (drop_trailing_zeros) {
+    out <- sub("(?<=\\d)0+$", "", out, perl = TRUE)
+    out <- sub("\\.$", "", out)
+  }
+
+  out
+}
+
+fmt_p <- function(x, digits = 3) {
+  ifelse(
+    is.na(x),
+    NA_character_,
+    ifelse(x < 0.001, "<0.001", formatC(x, format = "f", digits = digits))
+  )
+}
+
+fmt_ci <- function(lower, upper, digits = 2) {
+  paste0("(", fmt_num(lower, digits = digits), ", ", fmt_num(upper, digits = digits), ")")
+}
+
+fmt_n_pct <- function(n, total, digits = 1) {
+  pct <- ifelse(total > 0, (n / total) * 100, NA_real_)
+  paste0(n, " (", fmt_num(pct, digits = digits), "%)")
+}
+
+# ---------------------------------------------------------
+# 6. Column relabelling helper
+# ---------------------------------------------------------
+
+rename_table_columns <- function(data, plain = TRUE) {
+  stopifnot(is.data.frame(data))
+
+  new_names <- vapply(
+    names(data),
+    function(x) {
+      lab <- safe_label_variable(x, plain = plain)
+      if (length(lab) != 1 || is.na(lab) || !nzchar(as.character(lab))) {
+        x
+      } else {
+        as.character(lab)
+      }
+    },
+    character(1)
+  )
+
+  names(data) <- new_names
+  data
+}
+
+# ---------------------------------------------------------
+# 7. Standard column ordering helpers
+# ---------------------------------------------------------
+
+order_model_summary_columns <- function(data) {
+  preferred_order <- c(
+    "term",
+    "estimate",
+    "std_error",
+    "conf_low",
+    "conf_high",
+    "conf_int",
+    "statistic",
+    "p_value",
+    "effect_size",
+    "model",
+    "family",
+    "link",
+    "random_effects"
+  )
+
+  keep_first <- intersect(preferred_order, names(data))
+  keep_other <- setdiff(names(data), keep_first)
+
+  data[, c(keep_first, keep_other), drop = FALSE]
+}
+
+order_dataset_summary_columns <- function(data) {
+  preferred_order <- c(
+    "experiment_type",
+    "days_from_start",
+    "culture",
+    "well",
+    "video_file",
+    "n_rows",
+    "n_cultures",
+    "n_wells",
+    "n_videos",
+    "n_observations"
+  )
+
+  keep_first <- intersect(preferred_order, names(data))
+  keep_other <- setdiff(names(data), keep_first)
+
+  data[, c(keep_first, keep_other), drop = FALSE]
+}
+
+# ---------------------------------------------------------
+# 8. Publication table styling helpers
+# ---------------------------------------------------------
+
+make_gt_table <- function(data,
+                          title = NULL,
+                          subtitle = NULL,
+                          relabel_columns = TRUE) {
+  if (!.has_gt) {
+    stop("Package 'gt' is not available.", call. = FALSE)
+  }
+
+  stopifnot(is.data.frame(data))
+
+  if (relabel_columns) {
+    data <- rename_table_columns(data, plain = TRUE)
+  }
+
+  gt_tbl <- gt::gt(data)
+
+  if (!is.null(title) || !is.null(subtitle)) {
+    gt_tbl <- gt::tab_header(
+      gt_tbl,
+      title = title,
+      subtitle = subtitle
+    )
+  }
+
+  gt_tbl |>
+    gt::opt_table_font(
+      font = list(gt::google_font("Arial"), "Arial", "sans-serif")
+    ) |>
+    gt::tab_options(
+      table.font.size = gt::px(11),
+      heading.title.font.weight = "bold",
+      column_labels.font.weight = "bold",
+      table.border.top.width = gt::px(1),
+      table.border.bottom.width = gt::px(1),
+      heading.border.bottom.width = gt::px(1)
+    )
+}
+
+make_flextable_table <- function(data,
+                                 title = NULL,
+                                 relabel_columns = TRUE) {
+  if (!.has_flextable) {
+    stop("Package 'flextable' is not available.", call. = FALSE)
+  }
+
+  stopifnot(is.data.frame(data))
+
+  if (relabel_columns) {
+    data <- rename_table_columns(data, plain = TRUE)
+  }
+
+  ft <- flextable::flextable(data)
+  ft <- flextable::theme_booktabs(ft)
+  ft <- flextable::autofit(ft)
+
+  if (!is.null(title) && nzchar(title)) {
+    ft <- flextable::add_header_lines(ft, values = title)
+    ft <- flextable::bold(ft, part = "header")
+  }
+
+  ft
+}
+
+# ---------------------------------------------------------
+# 9. Export helpers
+# ---------------------------------------------------------
+
+write_table_csv <- function(data,
+                            table_name,
+                            subdir = NULL,
+                            quiet = FALSE) {
+  stopifnot(is.data.frame(data))
+
+  out_dir <- get_table_dir(subdir = subdir)
+  safe_name <- sanitize_table_filename(table_name)
+  out_file <- file.path(out_dir, paste0(safe_name, ".csv"))
+
+  readr::write_csv(data, out_file)
+
+  if (!quiet) {
+    message("Saved CSV table: ", out_file)
+  }
+
+  invisible(out_file)
+}
+
+write_table_rds <- function(data,
+                            table_name,
+                            subdir = NULL,
+                            quiet = FALSE) {
+  stopifnot(is.data.frame(data))
+
+  out_dir <- get_table_dir(subdir = subdir)
+  safe_name <- sanitize_table_filename(table_name)
+  out_file <- file.path(out_dir, paste0(safe_name, ".rds"))
+
+  saveRDS(data, out_file)
+
+  if (!quiet) {
+    message("Saved RDS table: ", out_file)
+  }
+
+  invisible(out_file)
+}
+
+write_table_md <- function(data,
+                           table_name,
+                           subdir = NULL,
+                           relabel_columns = TRUE,
+                           quiet = FALSE) {
+  stopifnot(is.data.frame(data))
+
+  out_dir <- get_table_dir(subdir = subdir)
+  safe_name <- sanitize_table_filename(table_name)
+  out_file <- file.path(out_dir, paste0(safe_name, ".md"))
+
+  if (relabel_columns) {
+    data <- rename_table_columns(data, plain = TRUE)
+  }
+
+  md_lines <- c(
+    paste0("# ", gsub("_", " ", safe_name)),
+    "",
+    paste0("| ", paste(names(data), collapse = " | "), " |"),
+    paste0("| ", paste(rep("---", ncol(data)), collapse = " | "), " |")
+  )
+
+  data_chr <- data |>
+    dplyr::mutate(dplyr::across(dplyr::everything(), as.character))
+
+  row_lines <- apply(
+    data_chr,
+    1,
+    function(row) paste0("| ", paste(row, collapse = " | "), " |")
+  )
+
+  writeLines(c(md_lines, row_lines), con = out_file)
+
+  if (!quiet) {
+    message("Saved markdown table: ", out_file)
+  }
+
+  invisible(out_file)
+}
+
+write_gt_html <- function(gt_table,
+                          table_name,
+                          subdir = NULL,
+                          quiet = FALSE) {
+  if (!.has_gt) {
+    stop("Package 'gt' is not available.", call. = FALSE)
+  }
+
+  out_dir <- get_table_dir(subdir = subdir)
+  safe_name <- sanitize_table_filename(table_name)
+  out_file <- file.path(out_dir, paste0(safe_name, ".html"))
+
+  gt::gtsave(gt_table, filename = out_file)
+
+  if (!quiet) {
+    message("Saved gt HTML table: ", out_file)
+  }
+
+  invisible(out_file)
+}
+
+write_flextable_docx <- function(ft_table,
+                                 table_name,
+                                 subdir = NULL,
+                                 quiet = FALSE) {
+  if (!.has_flextable) {
+    stop("Package 'flextable' is not available.", call. = FALSE)
+  }
+  if (!requireNamespace("officer", quietly = TRUE)) {
+    stop("Package 'officer' is required to save flextable to .docx.", call. = FALSE)
+  }
+
+  out_dir <- get_table_dir(subdir = subdir)
+  safe_name <- sanitize_table_filename(table_name)
+  out_file <- file.path(out_dir, paste0(safe_name, ".docx"))
+
+  doc <- officer::read_docx()
+  doc <- flextable::body_add_flextable(doc, value = ft_table)
+  print(doc, target = out_file)
+
+  if (!quiet) {
+    message("Saved flextable DOCX table: ", out_file)
+  }
+
+  invisible(out_file)
+}
+
+# ---------------------------------------------------------
+# 10. Save table set helper
+# ---------------------------------------------------------
+
+save_table_set <- function(data,
+                           table_name,
+                           subdir = NULL,
+                           save_csv = TRUE,
+                           save_rds = TRUE,
+                           save_md = TRUE,
+                           save_gt_html = FALSE,
+                           save_flextable_docx = FALSE,
+                           gt_title = NULL,
+                           gt_subtitle = NULL,
+                           ft_title = NULL,
+                           relabel_columns = TRUE,
+                           quiet = FALSE) {
+  stopifnot(is.data.frame(data))
+
+  saved_files <- character(0)
+
+  if (save_csv) {
+    saved_files <- c(saved_files, write_table_csv(
+      data = data,
+      table_name = table_name,
+      subdir = subdir,
+      quiet = quiet
+    ))
+  }
+
+  if (save_rds) {
+    saved_files <- c(saved_files, write_table_rds(
+      data = data,
+      table_name = table_name,
+      subdir = subdir,
+      quiet = quiet
+    ))
+  }
+
+  if (save_md) {
+    saved_files <- c(saved_files, write_table_md(
+      data = data,
+      table_name = table_name,
+      subdir = subdir,
+      relabel_columns = relabel_columns,
+      quiet = quiet
+    ))
+  }
+
+  if (save_gt_html) {
+    gt_tbl <- make_gt_table(
+      data = data,
+      title = gt_title,
+      subtitle = gt_subtitle,
+      relabel_columns = relabel_columns
+    )
+    saved_files <- c(saved_files, write_gt_html(
+      gt_table = gt_tbl,
+      table_name = table_name,
+      subdir = subdir,
+      quiet = quiet
+    ))
+  }
+
+  if (save_flextable_docx) {
+    ft_tbl <- make_flextable_table(
+      data = data,
+      title = ft_title,
+      relabel_columns = relabel_columns
+    )
+    saved_files <- c(saved_files, write_flextable_docx(
+      ft_table = ft_tbl,
+      table_name = table_name,
+      subdir = subdir,
+      quiet = quiet
+    ))
+  }
+
+  invisible(saved_files)
+}
+
+# ---------------------------------------------------------
+# 11. Table caption helper
+# ---------------------------------------------------------
+
+write_table_caption_md <- function(table_name,
+                                   caption_text,
+                                   subdir = NULL,
+                                   overwrite = TRUE) {
+  if (missing(table_name) || !nzchar(table_name)) {
+    stop("table_name must be provided.", call. = FALSE)
+  }
+
+  if (missing(caption_text) || !nzchar(caption_text)) {
+    stop("caption_text must be provided.", call. = FALSE)
+  }
+
+  out_dir <- get_table_dir(subdir = subdir)
+  safe_name <- sanitize_table_filename(table_name)
+  out_file <- file.path(out_dir, paste0(safe_name, "_caption.md"))
+
+  if (file.exists(out_file) && !overwrite) {
+    stop("Caption file already exists and overwrite = FALSE.", call. = FALSE)
+  }
+
+  writeLines(caption_text, con = out_file)
+
+  message("Saved table caption markdown: ", out_file)
+
+  invisible(out_file)
+}
+
+# ---------------------------------------------------------
+# 12. Standard table builders
+# ---------------------------------------------------------
+
+build_experimental_design_table <- function(data) {
+  stopifnot(is.data.frame(data))
+
+  out <- data |>
+    dplyr::mutate(
+      experiment_type = safe_label_experiment(experiment_type),
+      particle_type = safe_label_particle_type(particle_type),
+      size_class = safe_label_size_class(size_class)
+    ) |>
+    dplyr::group_by(experiment_type) |>
+    dplyr::summarise(
+      exposure_metric = dplyr::case_when(
+        dplyr::first(experiment_type) == "Experiment 1: Light-only gradient" ~ "lux_exposure",
+        dplyr::first(experiment_type) == "Experiment 2: Defined particle concentration series" ~ "NTU + particle type",
+        dplyr::first(experiment_type) == "Experiment 3: Particle size comparison under equal mass loading" ~ "size class (+ mass loading if needed)",
+        dplyr::first(experiment_type) == "Experiment 4: Field-derived SPM gradient" ~ "NTU",
+        TRUE ~ NA_character_
+      ),
+      treatment_classes = paste(sort(unique(stats::na.omit(c(particle_type, size_class)))), collapse = ", "),
+      min_day = suppressWarnings(min(days_from_start, na.rm = TRUE)),
+      max_day = suppressWarnings(max(days_from_start, na.rm = TRUE)),
+      days_sampled = ifelse(
+        is.finite(min_day) & is.finite(max_day),
+        paste0(min_day, "–", max_day),
+        NA_character_
+      ),
+      n_cultures = dplyr::n_distinct(culture, na.rm = TRUE),
+      n_wells = dplyr::n_distinct(well, na.rm = TRUE),
+      n_observations = dplyr::n(),
+      .groups = "drop"
+    ) |>
+    dplyr::select(
+      experiment_type,
+      exposure_metric,
+      treatment_classes,
+      days_sampled,
+      n_cultures,
+      n_wells,
+      n_observations
+    )
+
+  out
+}
+
+build_dataset_summary_table <- function(data) {
+  stopifnot(is.data.frame(data))
+
+  out <- data |>
+    dplyr::mutate(
+      experiment_type = safe_label_experiment(experiment_type)
+    ) |>
+    dplyr::group_by(experiment_type, days_from_start) |>
+    dplyr::summarise(
+      n_cultures = dplyr::n_distinct(culture, na.rm = TRUE),
+      n_wells = dplyr::n_distinct(well, na.rm = TRUE),
+      n_videos = dplyr::n_distinct(video_file, na.rm = TRUE),
+      n_observations = dplyr::n(),
+      .groups = "drop"
+    ) |>
+    order_dataset_summary_columns()
+
+  out
+}
+
+build_qc_summary_table <- function(data,
+                                   flag_column = "qc_any_flag",
+                                   exclusion_column = "exclusion_flag") {
+  stopifnot(is.data.frame(data))
+
+  if (!all(c(flag_column, exclusion_column) %in% names(data))) {
+    stop("QC summary columns not found in data.", call. = FALSE)
+  }
+
+  tibble::tibble(
+    metric = c(
+      "Total rows",
+      "Rows with any QC flag",
+      "Rows excluded",
+      "Rows retained for analysis"
+    ),
+    value = c(
+      nrow(data),
+      sum(data[[flag_column]], na.rm = TRUE),
+      sum(data[[exclusion_column]], na.rm = TRUE),
+      sum(!data[[exclusion_column]], na.rm = TRUE)
+    )
+  )
+}
+
+build_model_summary_table <- function(model_terms_df) {
+  stopifnot(is.data.frame(model_terms_df))
+
+  out <- model_terms_df |>
+    dplyr::mutate(
+      conf_int = dplyr::if_else(
+        !is.na(conf_low) & !is.na(conf_high),
+        fmt_ci(conf_low, conf_high, digits = 2),
+        NA_character_
+      ),
+      estimate = if ("estimate" %in% names(.)) fmt_num(estimate, digits = 3) else estimate,
+      std_error = if ("std_error" %in% names(.)) fmt_num(std_error, digits = 3) else std_error,
+      statistic = if ("statistic" %in% names(.)) fmt_num(statistic, digits = 3) else statistic,
+      p_value = if ("p_value" %in% names(.)) fmt_p(p_value, digits = 3) else p_value
+    ) |>
+    order_model_summary_columns()
+
+  out
+}
+
+build_model_comparison_table <- function(model_comp_df) {
+  stopifnot(is.data.frame(model_comp_df))
+
+  num_cols <- intersect(
+    c("aic", "bic", "logLik", "deviance", "delta_aic", "delta_bic"),
+    names(model_comp_df)
+  )
+
+  out <- model_comp_df
+
+  for (nm in num_cols) {
+    out[[nm]] <- fmt_num(out[[nm]], digits = 2)
+  }
+
+  out
+}
+
+# ---------------------------------------------------------
+# 13. Table note helpers
+# ---------------------------------------------------------
+
+table_note_model_ci <- function() {
+  "Estimates are shown with 95% confidence intervals where available."
+}
+
+table_note_counts <- function() {
+  "Counts are based on the analysis-ready dataset after explicit QC and exclusion steps."
+}
+
+table_note_single_species <- function() {
+  "Manuscript 4 is restricted to Laminaria digitata only."
+}
+
+# ---------------------------------------------------------
+# 14. Logging helper
+# ---------------------------------------------------------
+
+log_saved_table <- function(table_name,
+                            files_saved,
+                            log_path = NULL) {
+  if (is.null(log_path)) {
+    if (exists("dir_logs", inherits = TRUE)) {
+      log_path <- file.path(
+        get("dir_logs", inherits = TRUE),
+        "table_save_log.txt"
+      )
+    } else if (requireNamespace("here", quietly = TRUE)) {
+      log_path <- here::here("outputs", "logs", "table_save_log.txt")
+    } else {
+      log_path <- file.path("outputs", "logs", "table_save_log.txt")
+    }
+  }
+
+  log_dir <- dirname(log_path)
+  if (!dir.exists(log_dir)) {
+    dir.create(log_dir, recursive = TRUE, showWarnings = FALSE)
+  }
+
+  timestamp <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+  lines <- c(
+    paste0("[", timestamp, "] ", table_name),
+    paste0("  ", files_saved),
+    ""
+  )
+
+  cat(lines, file = log_path, sep = "\n", append = TRUE)
+
+  invisible(log_path)
+}
+
+# ---------------------------------------------------------
+# 15. Save + caption + log wrapper
+# ---------------------------------------------------------
+
+save_and_log_table <- function(data,
+                               table_name,
+                               caption_text = NULL,
+                               subdir = NULL,
+                               save_csv = TRUE,
+                               save_rds = TRUE,
+                               save_md = TRUE,
+                               save_gt_html = FALSE,
+                               save_flextable_docx = FALSE,
+                               gt_title = NULL,
+                               gt_subtitle = NULL,
+                               ft_title = NULL,
+                               relabel_columns = TRUE,
+                               write_caption = TRUE,
+                               log_path = NULL,
+                               quiet = FALSE) {
+  saved_files <- save_table_set(
+    data = data,
+    table_name = table_name,
+    subdir = subdir,
+    save_csv = save_csv,
+    save_rds = save_rds,
+    save_md = save_md,
+    save_gt_html = save_gt_html,
+    save_flextable_docx = save_flextable_docx,
+    gt_title = gt_title,
+    gt_subtitle = gt_subtitle,
+    ft_title = ft_title,
+    relabel_columns = relabel_columns,
+    quiet = quiet
+  )
+
+  caption_file <- NULL
+
+  if (write_caption && !is.null(caption_text) && nzchar(caption_text)) {
+    caption_file <- write_table_caption_md(
+      table_name = table_name,
+      caption_text = caption_text,
+      subdir = subdir
+    )
+  }
+
+  log_saved_table(
+    table_name = table_name,
+    files_saved = saved_files,
+    log_path = log_path
+  )
+
+  invisible(list(
+    table_files = saved_files,
+    caption_file = caption_file
+  ))
+}
+
+# ---------------------------------------------------------
+# 16. Load message
+# ---------------------------------------------------------
+
+message("helpers_tables.R loaded successfully.")
+message("Available builders: build_experimental_design_table(), build_dataset_summary_table(), build_qc_summary_table(), build_model_summary_table(), build_model_comparison_table()")
+message("Available exporters: save_table_set(), save_and_log_table(), write_table_caption_md()")

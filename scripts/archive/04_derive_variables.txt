@@ -1,0 +1,596 @@
+# =========================================================
+# Script title: 04_derive_variables.R
+# Project: SPM Analysis
+# Author: Marianne Glascott
+# Affiliation: School of Life Sciences, University of Sussex
+# Manuscript: Manuscript 4
+# Purpose: Derive analysis variables from the QC-passed
+#          dataset for summaries, plotting, experiment-
+#          specific modelling support, and downstream
+#          figure/table generation.
+# Inputs:
+# - data_derived/ms4_analysis_ready.csv or .rds
+# Outputs:
+# - data_derived/ms4_analysis_derived.csv
+# - data_derived/ms4_analysis_derived.rds
+# - data_derived/ms4_analysis_derived.parquet (if arrow available)
+# - outputs/tables/04_derived_variable_summary.csv
+# - outputs/tables/04_experiment_level_summary.csv
+# - outputs/logs/04_derive_variables_log_*.txt
+# Date created: 24 March 2026
+# Last updated: 24 March 2026
+# Notes/dependencies:
+# - Run 01_setup_packages_and_paths.R first.
+# - Run 03_qc_and_exclusions.R before this script.
+# - This script derives variables only; it does not apply
+#   any additional exclusions.
+# - Primary modelling remains based on
+#   cbind(mobile_cell_count, stationary_cell_count).
+# =========================================================
+
+cat("\n========================================================\n")
+cat("SCRIPT 04: DERIVE VARIABLES\n")
+cat("Start time:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("========================================================\n\n")
+
+# ---------------------------------------------------------
+# 1. Check setup objects
+# ---------------------------------------------------------
+
+required_objects <- c(
+  "project_root",
+  "dir_data_derived",
+  "dir_tables",
+  "dir_logs",
+  "project_title",
+  "manuscript_short"
+)
+
+missing_objects <- required_objects[!vapply(required_objects, exists, logical(1), inherits = TRUE)]
+
+if (length(missing_objects) > 0) {
+  stop(
+    paste0(
+      "The following required setup object(s) are missing:\n- ",
+      paste(missing_objects, collapse = "\n- "),
+      "\nPlease run 01_setup_packages_and_paths.R first."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Setup objects verified.\n\n")
+
+# ---------------------------------------------------------
+# 2. Source helper scripts if available
+# ---------------------------------------------------------
+
+helper_files <- c(
+  "helpers_labels.R",
+  "helpers_tables.R"
+)
+
+for (hf in helper_files) {
+  helper_path <- file.path(project_root, "R", hf)
+  if (file.exists(helper_path)) {
+    source(helper_path)
+    cat("Loaded helper:", hf, "\n")
+  }
+}
+cat("\n")
+
+# ---------------------------------------------------------
+# 3. Define input and output paths
+# ---------------------------------------------------------
+
+file_input_rds <- file.path(dir_data_derived, "ms4_analysis_ready.rds")
+file_input_csv <- file.path(dir_data_derived, "ms4_analysis_ready.csv")
+
+file_output_csv <- file.path(dir_data_derived, "ms4_analysis_derived.csv")
+file_output_rds <- file.path(dir_data_derived, "ms4_analysis_derived.rds")
+file_output_parquet <- file.path(dir_data_derived, "ms4_analysis_derived.parquet")
+
+file_derived_summary <- file.path(dir_tables, "04_derived_variable_summary.csv")
+file_experiment_summary <- file.path(dir_tables, "04_experiment_level_summary.csv")
+
+timestamp_now <- format(Sys.time(), "%Y%m%d_%H%M%S")
+file_derivation_log <- file.path(
+  dir_logs,
+  paste0("04_derive_variables_log_", timestamp_now, ".txt")
+)
+
+# ---------------------------------------------------------
+# 4. Import QC-passed dataset
+# ---------------------------------------------------------
+
+if (file.exists(file_input_rds)) {
+  dat <- readRDS(file_input_rds)
+  input_source_used <- file_input_rds
+} else if (file.exists(file_input_csv)) {
+  dat <- readr::read_csv(file_input_csv, show_col_types = FALSE, progress = FALSE)
+  input_source_used <- file_input_csv
+} else {
+  stop(
+    paste0(
+      "No analysis-ready dataset found.\nExpected one of:\n- ",
+      file_input_rds,
+      "\n- ",
+      file_input_csv,
+      "\nPlease run 03_qc_and_exclusions.R first."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Analysis-ready dataset loaded from:\n")
+cat(input_source_used, "\n")
+cat("Rows:", nrow(dat), "\n")
+cat("Columns:", ncol(dat), "\n\n")
+
+# ---------------------------------------------------------
+# 5. Check required columns
+# ---------------------------------------------------------
+
+required_columns <- c(
+  "row_id",
+  "experiment_type",
+  "mobile_cell_count",
+  "stationary_cell_count",
+  "days_from_start",
+  "lux_exposure",
+  "ntu",
+  "particle_type",
+  "size_class",
+  "mass_loading_ug_l",
+  "culture",
+  "well"
+)
+
+missing_required_columns <- required_columns[!required_columns %in% names(dat)]
+
+if (length(missing_required_columns) > 0) {
+  stop(
+    paste0(
+      "The following required column(s) are missing:\n- ",
+      paste(missing_required_columns, collapse = "\n- "),
+      "\nPlease review upstream scripts."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Required columns verified.\n\n")
+
+# ---------------------------------------------------------
+# 6. Standardise key grouping fields
+# ---------------------------------------------------------
+
+standardise_upper_trim <- function(x) {
+  x <- as.character(x)
+  x <- stringr::str_squish(x)
+  x <- toupper(x)
+  x[x %in% c("", "NA", "N/A", "NULL", "null", ".")] <- NA_character_
+  x
+}
+
+for (nm in intersect(c("experiment_type", "particle_type", "size_class", "toxin_exposure", "season", "site"), names(dat))) {
+  dat[[nm]] <- standardise_upper_trim(dat[[nm]])
+}
+
+cat("Key grouping fields standardised.\n\n")
+
+# ---------------------------------------------------------
+# 7. Refresh core count-derived variables
+# ---------------------------------------------------------
+
+dat <- dat |>
+  dplyr::mutate(
+    total_cells = dplyr::if_else(
+      !is.na(mobile_cell_count) & !is.na(stationary_cell_count),
+      mobile_cell_count + stationary_cell_count,
+      total_cells
+    ),
+    motility_ratio = dplyr::if_else(
+      !is.na(mobile_cell_count) & !is.na(stationary_cell_count) &
+        (mobile_cell_count + stationary_cell_count) > 0,
+      mobile_cell_count / (mobile_cell_count + stationary_cell_count),
+      NA_real_
+    ),
+    stationary_ratio = dplyr::if_else(
+      !is.na(mobile_cell_count) & !is.na(stationary_cell_count) &
+        (mobile_cell_count + stationary_cell_count) > 0,
+      stationary_cell_count / (mobile_cell_count + stationary_cell_count),
+      NA_real_
+    )
+  )
+
+cat("Core count-derived variables refreshed.\n\n")
+
+# ---------------------------------------------------------
+# 8. Derive transformed numeric predictors
+# ---------------------------------------------------------
+
+dat <- dat |>
+  dplyr::mutate(
+    log10_ntu_plus1 = dplyr::if_else(
+      !is.na(ntu),
+      log10(ntu + 1),
+      NA_real_
+    ),
+    log10_mass_loading_ug_l_plus1 = dplyr::if_else(
+      !is.na(mass_loading_ug_l),
+      log10(mass_loading_ug_l + 1),
+      NA_real_
+    ),
+    days_from_start_f = factor(
+      days_from_start,
+      levels = sort(unique(stats::na.omit(days_from_start)))
+    ),
+    day_order = dplyr::dense_rank(days_from_start)
+  )
+
+cat("Numeric transforms and day factor derived.\n\n")
+
+# ---------------------------------------------------------
+# 9. Derive treatment grouping variables
+# ---------------------------------------------------------
+
+dat <- dat |>
+  dplyr::mutate(
+    treatment_group = dplyr::case_when(
+      experiment_type %in% c("LIGHT_ONLY", "EXP1", "LIGHT") ~ "LIGHT",
+      experiment_type %in% c("DEFINED_PARTICLES", "EXP2") ~ "DEFINED_PARTICLES",
+      experiment_type %in% c("BRAKE_SIZE", "EXP3") ~ "BRAKE_SIZE",
+      experiment_type %in% c("FIELD_SPM", "EXP4") ~ "FIELD_SPM",
+      TRUE ~ "OTHER"
+    ),
+    treatment_group = factor(
+      treatment_group,
+      levels = c("LIGHT", "DEFINED_PARTICLES", "BRAKE_SIZE", "FIELD_SPM", "OTHER")
+    ),
+    particle_type_plot = dplyr::case_when(
+      !is.na(particle_type) ~ particle_type,
+      "toxin_exposure" %in% names(dat) & !is.na(toxin_exposure) ~ toxin_exposure,
+      TRUE ~ NA_character_
+    ),
+    particle_type_plot = factor(
+      particle_type_plot,
+      levels = c("CONTROL", "SAND", "KAOLINITE", "PEAT", "BWC", "BWF", "SPM")
+    ),
+    size_class_plot = dplyr::case_when(
+      size_class %in% c("COARSE", "BWC") ~ "COARSE",
+      size_class %in% c("FINE", "BWF") ~ "FINE",
+      TRUE ~ NA_character_
+    ),
+    size_class_plot = factor(size_class_plot, levels = c("COARSE", "FINE"))
+  )
+
+cat("Treatment grouping variables derived.\n\n")
+
+# ---------------------------------------------------------
+# 10. Derive experiment-specific inclusion markers
+# ---------------------------------------------------------
+
+dat <- dat |>
+  dplyr::mutate(
+    use_exp1_light = experiment_type %in% c("LIGHT_ONLY", "EXP1", "LIGHT") &
+      !is.na(lux_exposure) &
+      !is.na(days_from_start),
+
+    use_exp2_defined_particles = experiment_type %in% c("DEFINED_PARTICLES", "EXP2") &
+      !is.na(ntu) &
+      !is.na(particle_type_plot) &
+      !is.na(days_from_start),
+
+    use_exp3_brake_size = experiment_type %in% c("BRAKE_SIZE", "EXP3") &
+      !is.na(size_class_plot) &
+      !is.na(days_from_start),
+
+    use_exp4_field_spm = experiment_type %in% c("FIELD_SPM", "EXP4") &
+      !is.na(ntu) &
+      !is.na(days_from_start)
+  )
+
+cat("Experiment-specific inclusion markers derived.\n\n")
+
+# ---------------------------------------------------------
+# 11. Derive plotting / faceting helper variables
+# ---------------------------------------------------------
+
+dat <- dat |>
+  dplyr::mutate(
+    day_label = paste0("Day ", days_from_start),
+    ntu_band = dplyr::case_when(
+      is.na(ntu) ~ NA_character_,
+      ntu < 25 ~ "<25 NTU",
+      ntu >= 25 & ntu < 100 ~ "25-<100 NTU",
+      ntu >= 100 & ntu < 400 ~ "100-<400 NTU",
+      ntu >= 400 ~ ">=400 NTU",
+      TRUE ~ NA_character_
+    ),
+    ntu_band = factor(
+      ntu_band,
+      levels = c("<25 NTU", "25-<100 NTU", "100-<400 NTU", ">=400 NTU")
+    ),
+    lux_band = dplyr::case_when(
+      is.na(lux_exposure) ~ NA_character_,
+      lux_exposure == 0 ~ "0 lux",
+      lux_exposure > 0 ~ ">0 lux",
+      TRUE ~ NA_character_
+    ),
+    lux_band = factor(lux_band, levels = c("0 lux", ">0 lux"))
+  )
+
+cat("Plotting and faceting helpers derived.\n\n")
+
+# ---------------------------------------------------------
+# 12. Derive within-experiment observation counts
+# ---------------------------------------------------------
+
+dat <- dat |>
+  dplyr::group_by(experiment_type, days_from_start) |>
+  dplyr::mutate(
+    n_obs_experiment_day = dplyr::n()
+  ) |>
+  dplyr::ungroup() |>
+  dplyr::group_by(experiment_type, culture) |>
+  dplyr::mutate(
+    n_obs_experiment_culture = dplyr::n()
+  ) |>
+  dplyr::ungroup() |>
+  dplyr::group_by(experiment_type, well) |>
+  dplyr::mutate(
+    n_obs_experiment_well = dplyr::n()
+  ) |>
+  dplyr::ungroup()
+
+cat("Within-experiment observation counts derived.\n\n")
+
+# ---------------------------------------------------------
+# 13. Derive human-readable labels
+# ---------------------------------------------------------
+
+if (exists("label_experiment", mode = "function", inherits = TRUE)) {
+  dat$experiment_label <- label_experiment(dat$experiment_type, short = FALSE)
+  dat$experiment_short_label <- label_experiment(dat$experiment_type, short = TRUE)
+} else {
+  dat$experiment_label <- dat$experiment_type
+  dat$experiment_short_label <- dat$experiment_type
+}
+
+if (exists("label_particle_type", mode = "function", inherits = TRUE)) {
+  dat$particle_label <- label_particle_type(dat$particle_type_plot, short = FALSE)
+  dat$particle_short_label <- label_particle_type(dat$particle_type_plot, short = TRUE)
+} else {
+  dat$particle_label <- dat$particle_type_plot
+  dat$particle_short_label <- dat$particle_type_plot
+}
+
+if (exists("label_size_class", mode = "function", inherits = TRUE)) {
+  dat$size_class_label <- label_size_class(dat$size_class_plot)
+} else {
+  dat$size_class_label <- dat$size_class_plot
+}
+
+cat("Human-readable labels derived.\n\n")
+
+# ---------------------------------------------------------
+# 14. Re-coerce key grouping variables as factors
+# ---------------------------------------------------------
+
+factor_cols <- intersect(
+  c(
+    "experiment_type",
+    "experiment_label",
+    "experiment_short_label",
+    "treatment_group",
+    "particle_type_plot",
+    "particle_label",
+    "particle_short_label",
+    "size_class_plot",
+    "size_class_label",
+    "day_label",
+    "ntu_band",
+    "lux_band",
+    "culture",
+    "well"
+  ),
+  names(dat)
+)
+
+for (nm in factor_cols) {
+  dat[[nm]] <- as.factor(dat[[nm]])
+}
+
+cat("Key grouping variables re-coerced as factors.\n\n")
+
+# ---------------------------------------------------------
+# 15. Build derived variable summary table
+# ---------------------------------------------------------
+
+derived_variable_summary <- tibble::tibble(
+  derived_variable = c(
+    "total_cells",
+    "motility_ratio",
+    "stationary_ratio",
+    "log10_ntu_plus1",
+    "log10_mass_loading_ug_l_plus1",
+    "days_from_start_f",
+    "day_order",
+    "treatment_group",
+    "particle_type_plot",
+    "size_class_plot",
+    "use_exp1_light",
+    "use_exp2_defined_particles",
+    "use_exp3_brake_size",
+    "use_exp4_field_spm",
+    "day_label",
+    "ntu_band",
+    "lux_band",
+    "n_obs_experiment_day",
+    "n_obs_experiment_culture",
+    "n_obs_experiment_well",
+    "experiment_label",
+    "experiment_short_label",
+    "particle_label",
+    "particle_short_label",
+    "size_class_label"
+  ),
+  description = c(
+    "Recalculated mobile + stationary count total",
+    "Mobile / total; for summaries and plotting only",
+    "Stationary / total; complementary descriptive ratio",
+    "log10(ntu + 1) transform for NTU-based analyses",
+    "log10(mass_loading_ug_l + 1) transform for mass-based analyses",
+    "Factor version of days_from_start",
+    "Ordered integer rank of day values",
+    "Top-level experiment grouping variable",
+    "Plotting treatment factor for particle exposures",
+    "Plotting size factor for brake-size comparison",
+    "Marker for rows eligible for Experiment 1 analysis",
+    "Marker for rows eligible for Experiment 2 analysis",
+    "Marker for rows eligible for Experiment 3 analysis",
+    "Marker for rows eligible for Experiment 4 analysis",
+    "Human-readable day label for faceting",
+    "Broad NTU bin for summaries/EDA",
+    "Broad irradiance bin for summaries/EDA",
+    "Observation count within experiment-day",
+    "Observation count within experiment-culture",
+    "Observation count within experiment-well",
+    "Full experiment label",
+    "Short experiment label",
+    "Full particle/treatment label",
+    "Short particle/treatment label",
+    "Human-readable size class label"
+  )
+)
+
+readr::write_csv(derived_variable_summary, file_derived_summary)
+
+cat("Derived variable summary written to:\n")
+cat(file_derived_summary, "\n\n")
+
+# ---------------------------------------------------------
+# 16. Build experiment-level summary table
+# ---------------------------------------------------------
+
+experiment_level_summary <- dat |>
+  dplyr::group_by(
+    experiment_type,
+    experiment_label,
+    days_from_start
+  ) |>
+  dplyr::summarise(
+    n_rows = dplyr::n(),
+    n_cultures = dplyr::n_distinct(culture, na.rm = TRUE),
+    n_wells = dplyr::n_distinct(well, na.rm = TRUE),
+    n_particles = dplyr::n_distinct(particle_type_plot, na.rm = TRUE),
+    mean_total_cells = mean(total_cells, na.rm = TRUE),
+    mean_motility_ratio = mean(motility_ratio, na.rm = TRUE),
+    min_ntu = suppressWarnings(min(ntu, na.rm = TRUE)),
+    max_ntu = suppressWarnings(max(ntu, na.rm = TRUE)),
+    min_lux = suppressWarnings(min(lux_exposure, na.rm = TRUE)),
+    max_lux = suppressWarnings(max(lux_exposure, na.rm = TRUE)),
+    .groups = "drop"
+  )
+
+fix_inf_to_na <- function(x) {
+  if (is.numeric(x)) {
+    x[is.infinite(x)] <- NA_real_
+  }
+  x
+}
+
+experiment_level_summary <- experiment_level_summary |>
+  dplyr::mutate(dplyr::across(dplyr::everything(), fix_inf_to_na))
+
+readr::write_csv(experiment_level_summary, file_experiment_summary)
+
+cat("Experiment-level summary written to:\n")
+cat(file_experiment_summary, "\n\n")
+
+# ---------------------------------------------------------
+# 17. Write derived dataset to disk
+# ---------------------------------------------------------
+
+readr::write_csv(dat, file_output_csv)
+saveRDS(dat, file_output_rds)
+
+cat("Derived dataset written to:\n")
+cat("- ", file_output_csv, "\n", sep = "")
+cat("- ", file_output_rds, "\n", sep = "")
+
+if (requireNamespace("arrow", quietly = TRUE)) {
+  arrow::write_parquet(dat, file_output_parquet)
+  cat("- ", file_output_parquet, "\n", sep = "")
+} else {
+  cat("Parquet output skipped because package 'arrow' is not available.\n")
+}
+
+cat("\n")
+
+# ---------------------------------------------------------
+# 18. Write derivation log
+# ---------------------------------------------------------
+
+sink(file_derivation_log)
+cat("SPM Analysis - 04_derive_variables log\n")
+cat("Generated:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n\n")
+
+cat("Project:\n")
+cat(project_title, "\n")
+cat("Manuscript:\n")
+cat(manuscript_short, "\n\n")
+
+cat("Input dataset:\n")
+cat(input_source_used, "\n\n")
+
+cat("Output files:\n")
+cat(file_output_csv, "\n")
+cat(file_output_rds, "\n")
+if (requireNamespace("arrow", quietly = TRUE)) {
+  cat(file_output_parquet, "\n")
+}
+cat(file_derived_summary, "\n")
+cat(file_experiment_summary, "\n\n")
+
+cat("Dimensions:\n")
+cat("Rows:", nrow(dat), "\n")
+cat("Columns:", ncol(dat), "\n\n")
+
+cat("Derived variable summary:\n")
+print(derived_variable_summary)
+
+cat("\nExperiment-level summary:\n")
+print(experiment_level_summary)
+
+cat("\nSession information:\n\n")
+print(utils::sessionInfo())
+sink()
+
+cat("Derivation log written to:\n")
+cat(file_derivation_log, "\n\n")
+
+# ---------------------------------------------------------
+# 19. Console summary
+# ---------------------------------------------------------
+
+cat("Experiment eligibility counts:\n")
+print(
+  c(
+    use_exp1_light = sum(dat$use_exp1_light, na.rm = TRUE),
+    use_exp2_defined_particles = sum(dat$use_exp2_defined_particles, na.rm = TRUE),
+    use_exp3_brake_size = sum(dat$use_exp3_brake_size, na.rm = TRUE),
+    use_exp4_field_spm = sum(dat$use_exp4_field_spm, na.rm = TRUE)
+  )
+)
+cat("\n")
+
+cat("Experiment counts:\n")
+print(table(dat$experiment_type, useNA = "ifany"))
+cat("\n")
+
+cat("========================================================\n")
+cat("SCRIPT 04 COMPLETE: DERIVE VARIABLES\n")
+cat("End time:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("========================================================\n\n")

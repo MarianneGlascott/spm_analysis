@@ -1,0 +1,34 @@
+There are two instrument types. (1)Aquatec logger x1 used at different sites taking repeated readings for up to an hour at sites plus a few longer deployments. Turbidity measured in NTU (2) PEBL-CIC Grow Probes (x12) deplaoyed for days/weeks at sites and then retrieved. Both were also used in calibration against standard ntu analystical standards. Measures irradiance which can be converted to NTU by: Calibrating turbidity sensors
+I have plotted IR1 against each other and have noted the following (see image of my plots):
+- GP5 and GP4 seem to be the same data set
+- Biofouling is expected in April-May period which tends to be peak growth for most algae organisms.
+- Biofouling is stronger in GP4 than GP6 which is reflected in temp data (temp is higher and fluctuations are higher)
+- There are interesting drops in Irr1 which happen in one probe, but not the other. These drops suggest there is an influence that is not coming from the weather (i.e. discharge or other human activity)
+
+With regards to cleaning, using Virkon and gentle scrubbing with a cotton bud seems like the best approach. Cleaning is certainly one of the main limitations of the current turbidity sensors as the light source and sensor a encapsulated in a soft polymer which should not be touched too hard is it can break the waterproof seal. Improved on 2024 sensors by introducing a rigid plastic light source / sensor window.
+
+Standards are  they are composed of suspended polymer microspheres which improve the handling ,stability and accuracy when compared to Formazin Standards, they are accurate to ± 1% (Reagecon Turbidity Standards).
+
+Interpretation of model summary
+Model Equation
+Based on the coefficients from the output, the linear relationship between irradiance and turbidity can be expressed as:
+
+1. Coefficients
+Intercept (-230.6): This is the estimated value of turbidity when the irradiance (IR_av) is zero.
+Slope (0.2148): This indicates that for each unit increase in IR_av, the turbidity (Standard.NTU) increases by approximately 0.2148 NTU.
+2. Statistical Significance
+p-values (Pr(>|t|)):
+The intercept and the slope have very low p-values (9.26e-11 and 2.61e-11, respectively), which are much smaller than 0.05. This indicates that both coefficients are statistically significant.
+Significance Codes (***): The triple asterisks next to both coefficients indicate a very strong significance level (p < 0.001).
+3. Model Fit
+R-squared (0.9899): This value indicates that approximately 98.99% of the variability in turbidity is explained by the irradiance variable. This suggests a very strong linear relationship between the two variables.
+
+Adjusted R-squared (0.9889): This value is slightly lower than the R-squared, which adjusts for the number of predictors in the model. It’s still very high, confirming the model's strong explanatory power.
+
+Residual Standard Error (3.678): This is the average amount by which the actual turbidity values deviate from the values predicted by the model, in NTU units.
+
+4. Residuals
+The residuals section provides a summary of the differences between the observed and predicted values. The values suggest that most residuals are relatively small, indicating a good fit, but there are a few larger residual
+
+
+Aquatec logger & PEBL Grow Probe example data files (images attached)

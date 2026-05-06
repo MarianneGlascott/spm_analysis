@@ -1,0 +1,40 @@
+VERSION,5.2,AQUAtalk:V4.42,OS:V6.2
+LOGGER TYPE,AQUAlogger 310TYPT5 max50m 
+LOGGER,2554-327
+REGIME
+REGIME TITLE, Logging Mode, Start At, Burst Mode, Interval, Samples Per Burst, Within Burst Sample Rate, Samples Per Average, Intermittent Logging, Hours per Day, Days per Month, Months per Year
+Pilot 7 April 2023, Timed Start,15:47:35 05/04/2023,Disabled, 5.000000 Minutes,NA, NA, 1, Disabled, NA, NA, NA, NA
+[LOGGER CHANNEL 0],Disabled
+
+
+[LOGGER CHANNEL 1],Disabled
+
+
+[LOGGER CHANNEL 2],Battery        ,06/03/2023
+COEFFS, -46.089977, 5.4978768e-06, 0, 0, 0
+Channel Setup, Not Averaged, Gain x1, Interval Multiplier x1
+[LOGGER CHANNEL 3],Ext Power      ,06/03/2023
+COEFFS, -45.999802, 5.4883012e-06, 0, 0, 0
+Channel Setup, Not Averaged, Gain x1, Interval Multiplier x1
+[LOGGER CHANNEL 4],Temperature    ,13/03/2023
+COEFFS, 967.58575, -0.00022002781, 1.9068084e-11, -7.0580938e-19, 8.0592888e-27
+Channel Setup, Not Averaged, Gain x1, Interval Multiplier x1
+[LOGGER CHANNEL 5],Pressure       ,09/03/2023
+COEFFS, -0.0026125142, 3.2540086e-07, 5.6441919e-16, -1.0555092e-23, 0
+Channel Setup, Not Averaged, Gain x1, Interval Multiplier x1
+[LOGGER CHANNEL 6],Turbidity,09/03/2023
+COEFFS Raw1, -0.011529949, 0.82234406, 0, 0, 0,COEFFS Raw2, 86.911514, 0.8452599, 0, 0, 0,Transition Raw2,1080.2458
+Channel Setup, Not Averaged, Gain x1, Interval Multiplier x1
+[LOGGER CHANNEL 7],Disabled
+
+
+[LOGGER CHANNEL 8],Depth       ,Not Calibrated
+COEFFS, 51.507366, 1.0135, 1, 0, 0
+Channel Setup, Not Averaged, Gain x5
+[LOGGER CHANNEL 9],SSC         ,User Cal Req'd
+COEFFS, 0, 2, 0, 0, 0
+Channel Setup, Not Averaged, Gain x1
+START TIME, 05/04/2023 14:47:56
+STOP TIME, 05/04/2023 14:48:08
+HEADING, Timecode,,Battery        , , Ext Power      , , Temperature    , , Pressure       , , Turbidity, , , Depth       , , SSC         , , 
+UNITS, [dd/MM/yyyy HH:mm:ss],[ms], Raw, V      , Raw, V      , Raw, °C     , Raw, bar    , Raw1,Raw2, FTU    , Raw, m      , Raw, mg/l   , 

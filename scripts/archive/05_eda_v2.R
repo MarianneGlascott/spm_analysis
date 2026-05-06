@@ -1,0 +1,855 @@
+# =========================================================
+# Script title: 05_eda_v2.R
+# Project: SPM Analysis
+# Author: Marianne Glascott
+# Affiliation: School of Life Sciences, University of Sussex
+# Manuscript: Manuscript 4
+# Purpose: Conduct exploratory data analysis (EDA) on the
+#          analysis-derived Manuscript 4 dataset, generate
+#          descriptive summaries, check distributions and
+#          design balance, and save supplementary EDA
+#          figures and tables.
+# Inputs:
+# - data_derived/ms4_analysis_derived.csv or .rds
+# Outputs:
+# - outputs/tables/05_eda_dataset_overview.csv
+# - outputs/tables/05_eda_by_experiment_day.csv
+# - outputs/tables/05_eda_exp1_light_summary.csv
+# - outputs/tables/05_eda_exp2_defined_particles_summary.csv
+# - outputs/tables/05_eda_exp3_brake_size_summary.csv
+# - outputs/tables/05_eda_exp4_field_spm_summary.csv
+# - outputs/tables/05_eda_response_summary.csv
+# - outputs/tables/05_eda_missingness_summary.csv
+# - outputs/figures/eda/FigS2_eda_response_counts_and_motility_ratio_*.{pdf,png,tiff}
+# - outputs/figures/eda/FigS2b_eda_motility_by_experiment_day_*.{pdf,png,tiff}
+# - outputs/figures/eda/FigS2c_eda_predictor_distributions_*.{pdf,png,tiff}
+# - outputs/logs/05_eda_log_*.txt
+# Date created: 24 March 2026
+# Last updated: 26 March 2026
+# Notes/dependencies:
+# - Run 01_setup_packages_and_paths.R first.
+# - Run 04_derive_variables.R before this script.
+# - This script is descriptive only.
+# - EDA must operate within the Manuscript 4 experiment block.
+# - experiment / experiment_num are the primary grouping and
+#   subsetting variables; experiment_type is used mainly for
+#   labels and summaries.
+# - motility_ratio is used here for summaries and plotting
+#   only, not as a fitted response.
+# =========================================================
+
+cat("\n========================================================\n")
+cat("SCRIPT 05: EDA\n")
+cat("Start time:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("========================================================\n\n")
+
+# ---------------------------------------------------------
+# 1. Check setup objects
+# ---------------------------------------------------------
+
+required_objects <- c(
+  "project_root",
+  "dir_data_derived",
+  "dir_tables",
+  "dir_logs",
+  "project_title",
+  "manuscript_short"
+)
+
+missing_objects <- required_objects[!vapply(required_objects, exists, logical(1), inherits = TRUE)]
+
+if (length(missing_objects) > 0) {
+  stop(
+    paste0(
+      "The following required setup object(s) are missing:\n- ",
+      paste(missing_objects, collapse = "\n- "),
+      "\nPlease run 01_setup_packages_and_paths.R first."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Setup objects verified.\n\n")
+
+# ---------------------------------------------------------
+# 2. Source helper scripts
+# ---------------------------------------------------------
+
+helper_files <- c(
+  "helpers_theme.R",
+  "helpers_save_figures.R",
+  "helpers_labels.R",
+  "helpers_tables.R"
+)
+
+for (hf in helper_files) {
+  helper_path <- file.path(project_root, "R", hf)
+  if (file.exists(helper_path)) {
+    source(helper_path)
+    cat("Loaded helper:", hf, "\n")
+  }
+}
+cat("\n")
+
+# ---------------------------------------------------------
+# 3. Define input and output paths
+# ---------------------------------------------------------
+
+file_input_rds <- file.path(dir_data_derived, "ms4_analysis_derived.rds")
+file_input_csv <- file.path(dir_data_derived, "ms4_analysis_derived.csv")
+
+file_dataset_overview <- file.path(dir_tables, "05_eda_dataset_overview.csv")
+file_by_experiment_day <- file.path(dir_tables, "05_eda_by_experiment_day.csv")
+file_exp1_summary <- file.path(dir_tables, "05_eda_exp1_light_summary.csv")
+file_exp2_summary <- file.path(dir_tables, "05_eda_exp2_defined_particles_summary.csv")
+file_exp3_summary <- file.path(dir_tables, "05_eda_exp3_brake_size_summary.csv")
+file_exp4_summary <- file.path(dir_tables, "05_eda_exp4_field_spm_summary.csv")
+file_response_summary <- file.path(dir_tables, "05_eda_response_summary.csv")
+file_missingness_summary <- file.path(dir_tables, "05_eda_missingness_summary.csv")
+
+timestamp_now <- format(Sys.time(), "%Y%m%d_%H%M%S")
+file_eda_log <- file.path(
+  dir_logs,
+  paste0("05_eda_log_", timestamp_now, ".txt")
+)
+
+# ---------------------------------------------------------
+# 4. Import dataset
+# ---------------------------------------------------------
+
+if (file.exists(file_input_rds)) {
+  dat <- readRDS(file_input_rds)
+  input_source_used <- file_input_rds
+} else if (file.exists(file_input_csv)) {
+  dat <- readr::read_csv(file_input_csv, show_col_types = FALSE, progress = FALSE)
+  input_source_used <- file_input_csv
+} else {
+  stop(
+    paste0(
+      "No derived analysis dataset found.\nExpected one of:\n- ",
+      file_input_rds,
+      "\n- ",
+      file_input_csv,
+      "\nPlease run 04_derive_variables.R first."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Derived analysis dataset loaded from:\n")
+cat(input_source_used, "\n")
+cat("Rows:", nrow(dat), "\n")
+cat("Columns:", ncol(dat), "\n\n")
+
+# ---------------------------------------------------------
+# 5. Check minimum required columns
+# ---------------------------------------------------------
+
+required_columns <- c(
+  "row_id",
+  "experiment",
+  "experiment_num",
+  "experiment_type",
+  "mobile_cell_count",
+  "stationary_cell_count",
+  "total_cells",
+  "motility_ratio",
+  "days_from_start",
+  "culture",
+  "well"
+)
+
+missing_required_columns <- required_columns[!required_columns %in% names(dat)]
+
+if (length(missing_required_columns) > 0) {
+  stop(
+    paste0(
+      "The following required EDA column(s) are missing:\n- ",
+      paste(missing_required_columns, collapse = "\n- "),
+      "\nPlease review upstream scripts."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Required EDA columns verified.\n\n")
+
+# ---------------------------------------------------------
+# 6. Restrict explicitly to the Manuscript 4 block
+# ---------------------------------------------------------
+
+ms4_experiment_nums <- c(8.2, 9.2, 10.2, 11.2)
+
+dat <- dat |>
+  dplyr::mutate(
+    experiment_num = suppressWarnings(as.numeric(as.character(experiment_num))),
+    experiment_chr = stringr::str_squish(as.character(experiment)),
+    experiment_type = as.character(experiment_type)
+  ) |>
+  dplyr::filter(
+    !is.na(experiment_num),
+    experiment_num %in% ms4_experiment_nums
+  )
+
+cat("Restricted to Manuscript 4 experiment block.\n")
+cat("Rows retained:", nrow(dat), "\n\n")
+
+# ---------------------------------------------------------
+# 7. Small local helpers
+# ---------------------------------------------------------
+
+safe_min <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0) return(NA_real_)
+  min(x)
+}
+
+safe_max <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0) return(NA_real_)
+  max(x)
+}
+
+safe_mean <- function(x) {
+  if (all(is.na(x))) return(NA_real_)
+  mean(x, na.rm = TRUE)
+}
+
+safe_sd <- function(x) {
+  if (sum(!is.na(x)) < 2) return(NA_real_)
+  stats::sd(x, na.rm = TRUE)
+}
+
+safe_median <- function(x) {
+  if (all(is.na(x))) return(NA_real_)
+  stats::median(x, na.rm = TRUE)
+}
+
+safe_iqr <- function(x) {
+  if (sum(!is.na(x)) < 2) return(NA_real_)
+  stats::IQR(x, na.rm = TRUE)
+}
+
+safe_n_distinct <- function(x) {
+  dplyr::n_distinct(x, na.rm = TRUE)
+}
+
+# ---------------------------------------------------------
+# 8. Standardise selected fields
+# ---------------------------------------------------------
+
+standardise_upper_trim <- function(x) {
+  x <- as.character(x)
+  x <- stringr::str_squish(x)
+  x <- toupper(x)
+  x[x %in% c("", "NA", "N/A", "NULL", "null", ".")] <- NA_character_
+  x
+}
+
+for (nm in intersect(
+  c(
+    "experiment_type",
+    "experiment_label",
+    "experiment_short_label",
+    "experiment_plot_group",
+    "particle_type_plot",
+    "particle_type",
+    "particle_class",
+    "particle_label",
+    "size_class_plot",
+    "size_class",
+    "size_class_label",
+    "lux_exposure_f",
+    "lux_band",
+    "ntu_band"
+  ),
+  names(dat)
+)) {
+  if (nm %in% c("experiment_label", "experiment_short_label")) {
+    dat[[nm]] <- as.character(dat[[nm]])
+  } else {
+    dat[[nm]] <- standardise_upper_trim(dat[[nm]])
+  }
+}
+
+cat("Selected fields standardised for EDA.\n\n")
+
+# ---------------------------------------------------------
+# 9. Restore / derive key plotting labels
+# ---------------------------------------------------------
+
+dat <- dat |>
+  dplyr::mutate(
+    experiment_plot_label = dplyr::case_when(
+      "experiment_label" %in% names(dat) & !is.na(experiment_label) ~ experiment_label,
+      experiment_num == 9.2 ~ "Experiment 1: Light-only",
+      experiment_num == 10.2 ~ "Experiment 2: Defined particles",
+      experiment_num == 11.2 ~ "Experiment 3: Brake size",
+      experiment_num == 8.2 ~ "Experiment 4: Field SPM",
+      TRUE ~ as.character(experiment_type)
+    ),
+    days_from_start_f = factor(
+      days_from_start,
+      levels = sort(unique(stats::na.omit(days_from_start)))
+    )
+  )
+
+cat("EDA plotting labels prepared.\n\n")
+
+# ---------------------------------------------------------
+# 10. Dataset overview table
+# ---------------------------------------------------------
+
+dataset_overview <- tibble::tibble(
+  metric = c(
+    "n_rows",
+    "n_columns",
+    "n_experiments",
+    "n_cultures",
+    "n_wells",
+    "n_videos",
+    "min_day",
+    "max_day"
+  ),
+  value = c(
+    nrow(dat),
+    ncol(dat),
+    safe_n_distinct(dat$experiment_num),
+    if ("culture" %in% names(dat)) safe_n_distinct(dat$culture) else NA_integer_,
+    if ("well" %in% names(dat)) safe_n_distinct(dat$well) else NA_integer_,
+    if ("video_file" %in% names(dat)) safe_n_distinct(dat$video_file) else NA_integer_,
+    safe_min(dat$days_from_start),
+    safe_max(dat$days_from_start)
+  )
+)
+
+readr::write_csv(dataset_overview, file_dataset_overview)
+
+cat("Dataset overview written to:\n")
+cat(file_dataset_overview, "\n\n")
+
+# ---------------------------------------------------------
+# 11. By-experiment-by-day summary
+# ---------------------------------------------------------
+has_video_file <- "video_file" %in% names(dat)
+
+eda_by_experiment_day <- dat |>
+  dplyr::group_by(
+    experiment_num,
+    experiment_plot_label,
+    days_from_start
+  ) |>
+  dplyr::summarise(
+    n_rows = dplyr::n(),
+    n_cultures = safe_n_distinct(culture),
+    n_wells = safe_n_distinct(well),
+    n_videos = if (has_video_file) {
+      safe_n_distinct(video_file)
+    } else {
+      NA_integer_
+    },
+    mean_mobile = safe_mean(mobile_cell_count),
+    mean_stationary = safe_mean(stationary_cell_count),
+    mean_total = safe_mean(total_cells),
+    mean_motility_ratio = safe_mean(motility_ratio),
+    sd_motility_ratio = safe_sd(motility_ratio),
+    median_motility_ratio = safe_median(motility_ratio),
+    min_motility_ratio = safe_min(motility_ratio),
+    max_motility_ratio = safe_max(motility_ratio),
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(experiment_num, days_from_start)
+
+readr::write_csv(eda_by_experiment_day, file_by_experiment_day)
+
+cat("By-experiment-by-day summary written to:\n")
+cat(file_by_experiment_day, "\n\n")
+
+# ---------------------------------------------------------
+# 12. Response distribution summary
+# ---------------------------------------------------------
+
+response_summary <- tibble::tibble(
+  variable = c(
+    "mobile_cell_count",
+    "stationary_cell_count",
+    "total_cells",
+    "motility_ratio"
+  ),
+  n_non_missing = c(
+    sum(!is.na(dat$mobile_cell_count)),
+    sum(!is.na(dat$stationary_cell_count)),
+    sum(!is.na(dat$total_cells)),
+    sum(!is.na(dat$motility_ratio))
+  ),
+  mean = c(
+    safe_mean(dat$mobile_cell_count),
+    safe_mean(dat$stationary_cell_count),
+    safe_mean(dat$total_cells),
+    safe_mean(dat$motility_ratio)
+  ),
+  sd = c(
+    safe_sd(dat$mobile_cell_count),
+    safe_sd(dat$stationary_cell_count),
+    safe_sd(dat$total_cells),
+    safe_sd(dat$motility_ratio)
+  ),
+  median = c(
+    safe_median(dat$mobile_cell_count),
+    safe_median(dat$stationary_cell_count),
+    safe_median(dat$total_cells),
+    safe_median(dat$motility_ratio)
+  ),
+  iqr = c(
+    safe_iqr(dat$mobile_cell_count),
+    safe_iqr(dat$stationary_cell_count),
+    safe_iqr(dat$total_cells),
+    safe_iqr(dat$motility_ratio)
+  ),
+  min = c(
+    safe_min(dat$mobile_cell_count),
+    safe_min(dat$stationary_cell_count),
+    safe_min(dat$total_cells),
+    safe_min(dat$motility_ratio)
+  ),
+  max = c(
+    safe_max(dat$mobile_cell_count),
+    safe_max(dat$stationary_cell_count),
+    safe_max(dat$total_cells),
+    safe_max(dat$motility_ratio)
+  )
+)
+
+readr::write_csv(response_summary, file_response_summary)
+
+cat("Response summary written to:\n")
+cat(file_response_summary, "\n\n")
+
+# ---------------------------------------------------------
+# 13. Missingness summary
+# ---------------------------------------------------------
+
+candidate_missingness_cols <- intersect(
+  c(
+    "mobile_cell_count",
+    "stationary_cell_count",
+    "total_cells",
+    "motility_ratio",
+    "days_from_start",
+    "lux_exposure",
+    "lux_exposure_f",
+    "ntu",
+    "log10_ntu_plus1",
+    "particle_type_plot",
+    "size_class_plot",
+    "mass_loading_ug_l"
+  ),
+  names(dat)
+)
+
+missingness_summary <- tibble::tibble(
+  column_name = candidate_missingness_cols,
+  n_missing = vapply(candidate_missingness_cols, function(x) sum(is.na(dat[[x]])), integer(1)),
+  pct_missing = round(
+    vapply(candidate_missingness_cols, function(x) mean(is.na(dat[[x]])), numeric(1)) * 100,
+    2
+  )
+) |>
+  dplyr::arrange(dplyr::desc(pct_missing), column_name)
+
+readr::write_csv(missingness_summary, file_missingness_summary)
+
+cat("Missingness summary written to:\n")
+cat(file_missingness_summary, "\n\n")
+
+# ---------------------------------------------------------
+# 14. Experiment-specific EDA tables
+# ---------------------------------------------------------
+
+exp1_dat <- dat |>
+  dplyr::filter(experiment_num == 9.2)
+
+exp2_dat <- dat |>
+  dplyr::filter(experiment_num == 10.2)
+
+exp3_dat <- dat |>
+  dplyr::filter(experiment_num == 11.2)
+
+exp4_dat <- dat |>
+  dplyr::filter(experiment_num == 8.2)
+
+exp1_summary <- exp1_dat |>
+  dplyr::group_by(days_from_start, lux_exposure, lux_exposure_f) |>
+  dplyr::summarise(
+    n_rows = dplyr::n(),
+    n_cultures = safe_n_distinct(culture),
+    n_wells = safe_n_distinct(well),
+    mean_motility_ratio = safe_mean(motility_ratio),
+    sd_motility_ratio = safe_sd(motility_ratio),
+    mean_total_cells = safe_mean(total_cells),
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(days_from_start, lux_exposure)
+
+exp2_group_vars <- intersect(c("days_from_start", "particle_type_plot", "ntu"), names(exp2_dat))
+exp2_summary <- exp2_dat |>
+  dplyr::group_by(dplyr::across(dplyr::all_of(exp2_group_vars))) |>
+  dplyr::summarise(
+    n_rows = dplyr::n(),
+    n_cultures = safe_n_distinct(culture),
+    n_wells = safe_n_distinct(well),
+    mean_motility_ratio = safe_mean(motility_ratio),
+    sd_motility_ratio = safe_sd(motility_ratio),
+    mean_total_cells = safe_mean(total_cells),
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(days_from_start, particle_type_plot, ntu)
+
+exp3_group_vars <- intersect(c("days_from_start", "size_class_plot", "mass_loading_ug_l"), names(exp3_dat))
+exp3_summary <- exp3_dat |>
+  dplyr::group_by(dplyr::across(dplyr::all_of(exp3_group_vars))) |>
+  dplyr::summarise(
+    n_rows = dplyr::n(),
+    n_cultures = safe_n_distinct(culture),
+    n_wells = safe_n_distinct(well),
+    mean_motility_ratio = safe_mean(motility_ratio),
+    sd_motility_ratio = safe_sd(motility_ratio),
+    mean_total_cells = safe_mean(total_cells),
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(days_from_start, size_class_plot, mass_loading_ug_l)
+
+exp4_group_vars <- intersect(c("days_from_start", "ntu"), names(exp4_dat))
+exp4_summary <- exp4_dat |>
+  dplyr::group_by(dplyr::across(dplyr::all_of(exp4_group_vars))) |>
+  dplyr::summarise(
+    n_rows = dplyr::n(),
+    n_cultures = safe_n_distinct(culture),
+    n_wells = safe_n_distinct(well),
+    mean_motility_ratio = safe_mean(motility_ratio),
+    sd_motility_ratio = safe_sd(motility_ratio),
+    mean_total_cells = safe_mean(total_cells),
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(days_from_start, ntu)
+
+readr::write_csv(exp1_summary, file_exp1_summary)
+readr::write_csv(exp2_summary, file_exp2_summary)
+readr::write_csv(exp3_summary, file_exp3_summary)
+readr::write_csv(exp4_summary, file_exp4_summary)
+
+cat("Experiment-specific EDA summaries written.\n\n")
+
+# ---------------------------------------------------------
+# 15. Set plotting theme
+# ---------------------------------------------------------
+
+if (exists("set_kelp_theme", mode = "function", inherits = TRUE)) {
+  set_kelp_theme()
+  cat("Kelp plotting theme set.\n\n")
+}
+
+# ---------------------------------------------------------
+# 16. Build Fig S2: response counts and motility ratio
+# ---------------------------------------------------------
+
+response_long <- dat |>
+  tidyr::pivot_longer(
+    cols = c("mobile_cell_count", "stationary_cell_count", "total_cells"),
+    names_to = "response_variable",
+    values_to = "value"
+  )
+
+p_response_counts <- ggplot2::ggplot(
+  response_long,
+  ggplot2::aes(x = value)
+) +
+  ggplot2::geom_histogram(
+    bins = 30,
+    fill = "grey70",
+    colour = "white"
+  ) +
+  ggplot2::facet_wrap(~ response_variable, scales = "free", ncol = 1) +
+  ggplot2::labs(
+    title = "EDA distributions of response counts",
+    x = "Count",
+    y = "Frequency",
+    caption = "Raw distributions of mobile, stationary, and total cell counts."
+  )
+
+p_motility_ratio <- ggplot2::ggplot(
+  dat,
+  ggplot2::aes(x = motility_ratio)
+) +
+  ggplot2::geom_histogram(
+    bins = 30,
+    fill = "grey50",
+    colour = "white"
+  ) +
+  ggplot2::labs(
+    title = "EDA distribution of motile fraction",
+    x = "Motile fraction",
+    y = "Frequency",
+    caption = "Raw distribution of motility_ratio used for summaries and plotting."
+  )
+
+if (requireNamespace("patchwork", quietly = TRUE)) {
+  fig_s2 <- p_response_counts / p_motility_ratio
+} else {
+  fig_s2 <- p_response_counts
+}
+
+# ---------------------------------------------------------
+# 17. Build Fig S2b: motility by experiment and day
+# ---------------------------------------------------------
+
+p_motility_by_day <- ggplot2::ggplot(
+  dat,
+  ggplot2::aes(x = days_from_start_f, y = motility_ratio)
+) +
+  ggplot2::geom_boxplot(
+    outlier.alpha = 0.35,
+    width = 0.6
+  ) +
+  ggplot2::geom_jitter(
+    width = 0.15,
+    alpha = 0.25,
+    size = 1.2
+  ) +
+  ggplot2::facet_wrap(~ experiment_plot_label, scales = "free_y") +
+  ggplot2::labs(
+    title = "EDA of motile fraction by experiment and day",
+    x = "Days from start",
+    y = "Motile fraction",
+    caption = "Raw motility_ratio values shown by experiment and day."
+  )
+
+# ---------------------------------------------------------
+# 18. Build Fig S2c: predictor distributions by experiment
+# ---------------------------------------------------------
+
+predictor_plot_list <- list()
+
+if (nrow(exp1_dat) > 0 && "lux_exposure_f" %in% names(exp1_dat)) {
+  p_exp1_lux <- ggplot2::ggplot(
+    exp1_dat,
+    ggplot2::aes(x = lux_exposure_f)
+  ) +
+    ggplot2::geom_bar() +
+    ggplot2::labs(
+      title = "Experiment 1: irradiance coverage",
+      x = "Irradiance",
+      y = "Observations"
+    )
+  predictor_plot_list$exp1 <- p_exp1_lux
+}
+
+if (nrow(exp2_dat) > 0 && all(c("ntu", "particle_type_plot") %in% names(exp2_dat))) {
+  p_exp2_ntu <- ggplot2::ggplot(
+    exp2_dat,
+    ggplot2::aes(x = ntu, colour = particle_type_plot)
+  ) +
+    ggplot2::geom_density(na.rm = TRUE) +
+    ggplot2::labs(
+      title = "Experiment 2: NTU coverage by particle type",
+      x = "NTU",
+      y = "Density",
+      colour = "Particle type"
+    )
+  predictor_plot_list$exp2 <- p_exp2_ntu
+}
+
+if (nrow(exp3_dat) > 0 && "size_class_plot" %in% names(exp3_dat)) {
+  p_exp3_size <- ggplot2::ggplot(
+    exp3_dat,
+    ggplot2::aes(x = size_class_plot)
+  ) +
+    ggplot2::geom_bar() +
+    ggplot2::labs(
+      title = "Experiment 3: brake-wear size coverage",
+      x = "Size class",
+      y = "Observations"
+    )
+  predictor_plot_list$exp3 <- p_exp3_size
+}
+
+if (nrow(exp4_dat) > 0 && "ntu" %in% names(exp4_dat)) {
+  p_exp4_ntu <- ggplot2::ggplot(
+    exp4_dat,
+    ggplot2::aes(x = ntu)
+  ) +
+    ggplot2::geom_histogram(
+      bins = 30,
+      fill = "grey60",
+      colour = "white"
+    ) +
+    ggplot2::labs(
+      title = "Experiment 4: NTU coverage",
+      x = "NTU",
+      y = "Frequency"
+    )
+  predictor_plot_list$exp4 <- p_exp4_ntu
+}
+
+fig_s2c <- NULL
+
+if (length(predictor_plot_list) > 0 && requireNamespace("patchwork", quietly = TRUE)) {
+  fig_s2c <- patchwork::wrap_plots(predictor_plot_list)
+} else if (length(predictor_plot_list) > 0) {
+  fig_s2c <- predictor_plot_list[[1]]
+}
+
+# ---------------------------------------------------------
+# 19. Save figures
+# ---------------------------------------------------------
+
+saved_figures <- character(0)
+
+if (exists("save_figure_both_widths", mode = "function", inherits = TRUE)) {
+  saved_figures <- c(
+    saved_figures,
+    save_figure_both_widths(
+      plot = fig_s2,
+      figure_name = "FigS2_eda_response_counts_and_motility_ratio",
+      subdir = "eda",
+      height = "tall",
+      quiet = TRUE
+    ),
+    save_figure_both_widths(
+      plot = p_motility_by_day,
+      figure_name = "FigS2b_eda_motility_by_experiment_day",
+      subdir = "eda",
+      height = "tall",
+      quiet = TRUE
+    )
+  )
+
+  if (!is.null(fig_s2c)) {
+    saved_figures <- c(
+      saved_figures,
+      save_figure_both_widths(
+        plot = fig_s2c,
+        figure_name = "FigS2c_eda_predictor_distributions",
+        subdir = "eda",
+        height = "standard",
+        quiet = TRUE
+      )
+    )
+  }
+} else {
+  cat("Figure save helper not found; EDA figures were created but not automatically saved.\n\n")
+}
+
+cat("EDA figures processed.\n\n")
+
+# ---------------------------------------------------------
+# 20. Write captions
+# ---------------------------------------------------------
+
+if (exists("write_figure_caption_md", mode = "function", inherits = TRUE)) {
+  write_figure_caption_md(
+    figure_name = "FigS2_eda_response_counts_and_motility_ratio",
+    caption_text = "Exploratory distributions of raw mobile, stationary, and total cell counts, together with the derived motile fraction. These plots are descriptive only and are intended to show response structure before formal modelling.",
+    subdir = "eda"
+  )
+
+  write_figure_caption_md(
+    figure_name = "FigS2b_eda_motility_by_experiment_day",
+    caption_text = "Raw motile fraction values by experiment and day. Boxplots and jittered observations are shown to visualise variation, spread, and potential day-level shifts prior to formal model fitting.",
+    subdir = "eda"
+  )
+
+  if (!is.null(fig_s2c)) {
+    write_figure_caption_md(
+      figure_name = "FigS2c_eda_predictor_distributions",
+      caption_text = "Exploratory coverage of key design predictors by experiment. Irradiance levels are shown for Experiment 1, NTU distributions for Experiments 2 and 4, and brake-wear size-class coverage for Experiment 3.",
+      subdir = "eda"
+    )
+  }
+}
+
+# ---------------------------------------------------------
+# 21. Write EDA log
+# ---------------------------------------------------------
+
+sink(file_eda_log)
+cat("SPM Analysis - 05_eda log\n")
+cat("Generated:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n\n")
+
+cat("Project:\n")
+cat(project_title, "\n")
+cat("Manuscript:\n")
+cat(manuscript_short, "\n\n")
+
+cat("Input dataset:\n")
+cat(input_source_used, "\n\n")
+
+cat("Dataset dimensions:\n")
+cat("Rows:", nrow(dat), "\n")
+cat("Columns:", ncol(dat), "\n\n")
+
+cat("Dataset overview:\n")
+print(dataset_overview)
+cat("\n")
+
+cat("Response summary:\n")
+print(response_summary)
+cat("\n")
+
+cat("Missingness summary:\n")
+print(missingness_summary)
+cat("\n")
+
+cat("By experiment and day summary:\n")
+print(eda_by_experiment_day)
+cat("\n")
+
+cat("Experiment 1 summary:\n")
+print(exp1_summary)
+cat("\n")
+
+cat("Experiment 2 summary:\n")
+print(exp2_summary)
+cat("\n")
+
+cat("Experiment 3 summary:\n")
+print(exp3_summary)
+cat("\n")
+
+cat("Experiment 4 summary:\n")
+print(exp4_summary)
+cat("\n")
+
+cat("Figures saved:\n")
+if (length(saved_figures) == 0) {
+  cat("No figures were automatically saved.\n")
+} else {
+  cat(paste(saved_figures, collapse = "\n"), "\n")
+}
+cat("\n")
+
+cat("Session information:\n\n")
+print(utils::sessionInfo())
+sink()
+
+cat("EDA log written to:\n")
+cat(file_eda_log, "\n\n")
+
+# ---------------------------------------------------------
+# 22. Console summary
+# ---------------------------------------------------------
+
+cat("Response summary:\n")
+print(response_summary)
+cat("\n")
+
+cat("Rows by experiment_num:\n")
+print(table(dat$experiment_num, useNA = "ifany"))
+cat("\n")
+
+cat("05 EDA outputs written successfully.\n\n")
+
+cat("========================================================\n")
+cat("SCRIPT 05 COMPLETE: EDA\n")
+cat("End time:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("========================================================\n\n")

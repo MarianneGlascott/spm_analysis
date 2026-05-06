@@ -1,0 +1,626 @@
+# =========================================================
+# Script title: 03_qc_and_exclusions_v2.R
+# Project: SPM Analysis
+# Author: Marianne Glascott
+# Affiliation: School of Life Sciences, University of Sussex
+# Manuscript: Manuscript 4
+# Purpose: Apply explicit QC checks, generate transparent
+#          QC flags, implement reproducible exclusion rules,
+#          and write both flagged and analysis-ready datasets
+#          to disk without modifying raw data.
+# Inputs:
+# - data_clean/ms4_imported_clean.csv or .rds
+# Outputs:
+# - data_derived/ms4_qc_flagged_full.csv
+# - data_derived/ms4_qc_flagged_full.rds
+# - data_derived/ms4_qc_flagged_full.parquet (if arrow available)
+# - data_derived/ms4_analysis_ready.csv
+# - data_derived/ms4_analysis_ready.rds
+# - data_derived/ms4_analysis_ready.parquet (if arrow available)
+# - outputs/tables/03_qc_flag_summary.csv
+# - outputs/tables/03_exclusion_summary.csv
+# - outputs/tables/03_qc_row_level_flags.csv
+# - outputs/logs/03_qc_and_exclusions_log_*.txt
+# Date created: 24 March 2026
+# Last updated: 24 March 2026
+# Notes/dependencies:
+# - Run 01_setup_packages_and_paths.R first.
+# - Run 02_import_and_clean_data.R before this script.
+# - Raw data remain untouched.
+# - Flagging is broader than exclusion.
+# - Exclusions are applied only when explicitly defined here.
+# =========================================================
+
+cat("\n========================================================\n")
+cat("SCRIPT 03: QC AND EXCLUSIONS\n")
+cat("Start time:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("========================================================\n\n")
+
+
+source(here::here("R", "helpers_theme.R"))
+source(here::here("R", "helpers_save_figures.R"))
+source(here::here("R", "helpers_labels.R"))
+source(here::here("R", "helpers_tables.R"))
+source(here::here("R", "helpers_model_checks.R"))
+
+# ---------------------------------------------------------
+# 1. Check setup objects
+# ---------------------------------------------------------
+
+required_objects <- c(
+  "project_root",
+  "dir_data_clean",
+  "dir_data_derived",
+  "dir_tables",
+  "dir_logs",
+  "project_title",
+  "manuscript_short"
+)
+
+missing_objects <- required_objects[!vapply(required_objects, exists, logical(1), inherits = TRUE)]
+
+if (length(missing_objects) > 0) {
+  stop(
+    paste0(
+      "The following required setup object(s) are missing:\n- ",
+      paste(missing_objects, collapse = "\n- "),
+      "\nPlease run 01_setup_packages_and_paths.R first."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Setup objects verified.\n\n")
+
+# ---------------------------------------------------------
+# 2. Source helper scripts if available
+# ---------------------------------------------------------
+
+helper_files <- c(
+  "helpers_labels.R",
+  "helpers_tables.R"
+)
+
+for (hf in helper_files) {
+  helper_path <- file.path(project_root, "R", hf)
+  if (file.exists(helper_path)) {
+    source(helper_path)
+    cat("Loaded helper:", hf, "\n")
+  }
+}
+cat("\n")
+
+# ---------------------------------------------------------
+# 3. Define file paths
+# ---------------------------------------------------------
+
+file_input_rds <- file.path(dir_data_clean, "ms4_imported_clean.rds")
+file_input_csv <- file.path(dir_data_clean, "ms4_imported_clean.csv")
+
+file_qc_flagged_csv <- file.path(dir_data_derived, "ms4_qc_flagged_full.csv")
+file_qc_flagged_rds <- file.path(dir_data_derived, "ms4_qc_flagged_full.rds")
+file_qc_flagged_parquet <- file.path(dir_data_derived, "ms4_qc_flagged_full.parquet")
+
+file_analysis_ready_csv <- file.path(dir_data_derived, "ms4_analysis_ready.csv")
+file_analysis_ready_rds <- file.path(dir_data_derived, "ms4_analysis_ready.rds")
+file_analysis_ready_parquet <- file.path(dir_data_derived, "ms4_analysis_ready.parquet")
+
+file_qc_flag_summary <- file.path(dir_tables, "03_qc_flag_summary.csv")
+file_exclusion_summary <- file.path(dir_tables, "03_exclusion_summary.csv")
+file_qc_row_level_flags <- file.path(dir_tables, "03_qc_row_level_flags.csv")
+
+timestamp_now <- format(Sys.time(), "%Y%m%d_%H%M%S")
+file_qc_log <- file.path(
+  dir_logs,
+  paste0("03_qc_and_exclusions_log_", timestamp_now, ".txt")
+)
+
+# ---------------------------------------------------------
+# 4. Import cleaned dataset
+# ---------------------------------------------------------
+
+if (file.exists(file_input_rds)) {
+  dat <- readRDS(file_input_rds)
+  input_source_used <- file_input_rds
+} else if (file.exists(file_input_csv)) {
+  dat <- readr::read_csv(file_input_csv, show_col_types = FALSE, progress = FALSE)
+  input_source_used <- file_input_csv
+} else {
+  stop(
+    paste0(
+      "No imported clean dataset found.\nExpected one of:\n- ",
+      file_input_rds,
+      "\n- ",
+      file_input_csv,
+      "\nPlease run 02_import_and_clean_data.R first."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Imported cleaned dataset loaded from:\n")
+cat(input_source_used, "\n")
+cat("Rows:", nrow(dat), "\n")
+cat("Columns:", ncol(dat), "\n\n")
+
+# ---------------------------------------------------------
+# 5. Check required columns
+# ---------------------------------------------------------
+
+required_qc_columns <- c(
+  "row_id",
+  "mobile_cell_count",
+  "stationary_cell_count",
+  "total_cells",
+  "frame_count",
+  "count_date_yyyy_mm_dd",
+  "start_date_yyyy_mm_dd",
+  "experiment_type",
+  "days_from_start",
+  "lux_exposure",
+  "ntu",
+  "particle_type",
+  "size_class",
+  "mass_loading_ug_l"
+)
+
+missing_qc_columns <- required_qc_columns[!required_qc_columns %in% names(dat)]
+
+if (length(missing_qc_columns) > 0) {
+  stop(
+    paste0(
+      "The following required QC column(s) are missing:\n- ",
+      paste(missing_qc_columns, collapse = "\n- "),
+      "\nPlease review the import script and source dataset."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Required QC columns verified.\n\n")
+
+# ---------------------------------------------------------
+# 6. Standardise selected fields for QC evaluation
+# ---------------------------------------------------------
+
+standardise_upper_trim <- function(x) {
+  x <- as.character(x)
+  x <- stringr::str_squish(x)
+  x <- toupper(x)
+  x[x %in% c("", "NA", "N/A", "NULL", "null", ".")] <- NA_character_
+  x
+}
+
+for (nm in intersect(c("experiment_type", "particle_type", "size_class", "toxin_exposure"), names(dat))) {
+  dat[[nm]] <- standardise_upper_trim(dat[[nm]])
+}
+
+cat("Selected fields standardised for QC checks.\n\n")
+
+# ---------------------------------------------------------
+# 7. Refresh count-derived QC check values
+# ---------------------------------------------------------
+
+dat <- dat |>
+  dplyr::mutate(
+    qc_recalc_total_cells = dplyr::if_else(
+      !is.na(mobile_cell_count) & !is.na(stationary_cell_count),
+      mobile_cell_count + stationary_cell_count,
+      NA_integer_
+    ),
+    qc_recalc_motility_ratio = dplyr::if_else(
+      !is.na(mobile_cell_count) & !is.na(stationary_cell_count) &
+        (mobile_cell_count + stationary_cell_count) > 0,
+      mobile_cell_count / (mobile_cell_count + stationary_cell_count),
+      NA_real_
+    )
+  )
+
+cat("QC recalculated totals created.\n\n")
+
+# ---------------------------------------------------------
+# 8. Expected frame count rule
+# ---------------------------------------------------------
+
+expected_frame_count <- 500L
+frame_tolerance <- 10L
+
+cat("Frame count QC rule:\n")
+cat("- Expected frame count:", expected_frame_count, "\n")
+cat("- Tolerance:", frame_tolerance, "frames\n\n")
+
+# ---------------------------------------------------------
+# 9. Create pre-specified QC flags
+# ---------------------------------------------------------
+
+dat_qc <- dat |>
+  dplyr::mutate(
+    flag_missing_response_counts =
+      is.na(mobile_cell_count) | is.na(stationary_cell_count),
+
+    flag_total_cell_count_le_zero =
+      !is.na(qc_recalc_total_cells) & qc_recalc_total_cells <= 0,
+
+    flag_inconsistent_count_totals =
+      !is.na(total_cells) & !is.na(qc_recalc_total_cells) &
+      total_cells != qc_recalc_total_cells,
+
+    flag_missing_key_predictor =
+      dplyr::case_when(
+        experiment_type == "LIGHT_ONLY" ~
+          is.na(lux_exposure) | is.na(days_from_start),
+        
+        experiment_type == "DEFINED_PARTICLES" ~
+          is.na(ntu) | is.na(particle_type) | is.na(days_from_start),
+        
+        experiment_type == "BRAKE_SIZE" ~
+          is.na(size_class) | is.na(days_from_start),
+        
+        experiment_type == "FIELD_SPM" ~
+          is.na(ntu) | is.na(days_from_start),
+        
+        TRUE ~ FALSE
+      ),
+
+    flag_unexpected_frame_count =
+      is.na(frame_count) |
+      abs(frame_count - expected_frame_count) > frame_tolerance,
+
+    flag_impossible_date_sequences =
+      !is.na(count_date_yyyy_mm_dd) &
+      !is.na(start_date_yyyy_mm_dd) &
+      count_date_yyyy_mm_dd < start_date_yyyy_mm_dd,
+
+    flag_negative_mobile_count =
+      !is.na(mobile_cell_count) & mobile_cell_count < 0,
+
+    flag_negative_stationary_count =
+      !is.na(stationary_cell_count) & stationary_cell_count < 0,
+
+    flag_negative_ntu =
+      !is.na(ntu) & ntu < 0,
+
+    flag_negative_lux =
+      !is.na(lux_exposure) & lux_exposure < 0,
+
+    flag_negative_mass_loading =
+      !is.na(mass_loading_ug_l) & mass_loading_ug_l < 0
+  )
+
+cat("Pre-specified QC flags created.\n\n")
+
+# ---------------------------------------------------------
+# 10. Create row-level flag counts and flag reason field
+# ---------------------------------------------------------
+
+flag_columns <- names(dat_qc)[stringr::str_detect(names(dat_qc), "^flag_")]
+
+dat_qc <- dat_qc |>
+  dplyr::mutate(
+    qc_n_flags = rowSums(dplyr::across(dplyr::all_of(flag_columns), ~ as.integer(.x)), na.rm = TRUE),
+    qc_any_flag = qc_n_flags > 0
+  )
+
+collapse_true_reasons <- function(row_values, prefix = "^flag_") {
+  nm <- names(row_values)[which(row_values)]
+  if (length(nm) == 0) {
+    return(NA_character_)
+  }
+  nm <- gsub(prefix, "", nm)
+  paste(nm, collapse = "; ")
+}
+
+flag_matrix <- as.data.frame(dat_qc[, flag_columns, drop = FALSE])
+
+dat_qc$qc_flag_reason <- vapply(
+  seq_len(nrow(flag_matrix)),
+  function(i) collapse_true_reasons(as.logical(unlist(flag_matrix[i, ])), prefix = "^flag_"),
+  character(1)
+)
+
+dat_qc$qc_flag_reason[!dat_qc$qc_any_flag] <- NA_character_
+
+if (exists("prettify_reason_string", mode = "function", inherits = TRUE)) {
+  dat_qc$qc_flag_reason_pretty <- prettify_reason_string(dat_qc$qc_flag_reason)
+} else {
+  dat_qc$qc_flag_reason_pretty <- dat_qc$qc_flag_reason
+}
+
+cat("QC flag counts and reason fields created.\n\n")
+
+# ---------------------------------------------------------
+# 11. Define explicit exclusion rules
+# ---------------------------------------------------------
+
+dat_qc <- dat_qc |>
+  dplyr::mutate(
+    exclude_missing_response_counts = flag_missing_response_counts,
+    exclude_total_cell_count_le_zero = flag_total_cell_count_le_zero,
+    exclude_missing_key_predictor = flag_missing_key_predictor,
+    exclude_negative_mobile_count = flag_negative_mobile_count,
+    exclude_negative_stationary_count = flag_negative_stationary_count,
+
+    # flagged but not excluded by default
+    exclude_inconsistent_count_totals = FALSE,
+    exclude_unexpected_frame_count = FALSE,
+    exclude_impossible_date_sequences = FALSE,
+    exclude_negative_ntu = FALSE,
+    exclude_negative_lux = FALSE,
+    exclude_negative_mass_loading = FALSE
+  )
+
+exclude_columns <- names(dat_qc)[stringr::str_detect(names(dat_qc), "^exclude_")]
+
+dat_qc <- dat_qc |>
+  dplyr::mutate(
+    exclusion_flag = rowSums(dplyr::across(dplyr::all_of(exclude_columns), ~ as.integer(.x)), na.rm = TRUE) > 0
+  )
+
+exclude_matrix <- as.data.frame(dat_qc[, exclude_columns, drop = FALSE])
+
+dat_qc$exclusion_reason <- vapply(
+  seq_len(nrow(exclude_matrix)),
+  function(i) collapse_true_reasons(as.logical(unlist(exclude_matrix[i, ])), prefix = "^exclude_"),
+  character(1)
+)
+
+dat_qc$exclusion_reason[!dat_qc$exclusion_flag] <- NA_character_
+
+if (exists("prettify_reason_string", mode = "function", inherits = TRUE)) {
+  dat_qc$exclusion_reason_pretty <- prettify_reason_string(dat_qc$exclusion_reason)
+} else {
+  dat_qc$exclusion_reason_pretty <- dat_qc$exclusion_reason
+}
+
+cat("Explicit exclusion rules applied.\n\n")
+
+# ---------------------------------------------------------
+# 12. Create row-level QC table
+# ---------------------------------------------------------
+
+row_level_flags <- dat_qc |>
+  dplyr::select(
+    row_id,
+    dplyr::any_of(c(
+      "video_file",
+      "experiment_id",
+      "experiment_type",
+      "culture",
+      "well",
+      "days_from_start"
+    )),
+    dplyr::all_of(flag_columns),
+    qc_n_flags,
+    qc_any_flag,
+    qc_flag_reason,
+    qc_flag_reason_pretty,
+    dplyr::all_of(exclude_columns),
+    exclusion_flag,
+    exclusion_reason,
+    exclusion_reason_pretty
+  )
+
+readr::write_csv(row_level_flags, file_qc_row_level_flags)
+
+cat("Row-level QC flags written to:\n")
+cat(file_qc_row_level_flags, "\n\n")
+
+# ---------------------------------------------------------
+# 13. Build QC summary tables
+# ---------------------------------------------------------
+
+qc_flag_summary <- tibble::tibble(
+  qc_flag = flag_columns,
+  n_flagged = vapply(flag_columns, function(x) sum(dat_qc[[x]], na.rm = TRUE), integer(1)),
+  pct_flagged = round(
+    vapply(flag_columns, function(x) mean(dat_qc[[x]], na.rm = TRUE), numeric(1)) * 100,
+    2
+  )
+) |>
+  dplyr::mutate(
+    qc_flag_label = if (exists("label_qc_flag", mode = "function", inherits = TRUE)) {
+      label_qc_flag(qc_flag)
+    } else {
+      qc_flag
+    }
+  ) |>
+  dplyr::arrange(dplyr::desc(n_flagged), qc_flag)
+
+exclusion_summary <- tibble::tibble(
+  exclusion_rule = exclude_columns,
+  n_excluded_by_rule = vapply(exclude_columns, function(x) sum(dat_qc[[x]], na.rm = TRUE), integer(1)),
+  pct_excluded_by_rule = round(
+    vapply(exclude_columns, function(x) mean(dat_qc[[x]], na.rm = TRUE), numeric(1)) * 100,
+    2
+  )
+) |>
+  dplyr::mutate(
+    exclusion_label = if (exists("label_exclusion", mode = "function", inherits = TRUE)) {
+      label_exclusion(exclusion_rule)
+    } else {
+      exclusion_rule
+    }
+  ) |>
+  dplyr::arrange(dplyr::desc(n_excluded_by_rule), exclusion_rule)
+
+readr::write_csv(qc_flag_summary, file_qc_flag_summary)
+readr::write_csv(exclusion_summary, file_exclusion_summary)
+
+cat("QC summary tables written to:\n")
+cat("- ", file_qc_flag_summary, "\n", sep = "")
+cat("- ", file_exclusion_summary, "\n\n", sep = "")
+
+# ---------------------------------------------------------
+# 14. Create analysis-ready dataset
+# ---------------------------------------------------------
+
+analysis_ready <- dat_qc |>
+  dplyr::filter(!exclusion_flag)
+
+cat("Analysis-ready dataset created.\n")
+cat("Rows retained:", nrow(analysis_ready), "\n")
+cat("Rows excluded:", nrow(dat_qc) - nrow(analysis_ready), "\n\n")
+
+# ---------------------------------------------------------
+# 15. Re-coerce key grouping variables as factors
+# ---------------------------------------------------------
+
+factor_cols_to_restore <- intersect(
+  c(
+    "video_file",
+    "camera_file",
+    "species",
+    "site",
+    "culture",
+    "experiment_id",
+    "experiment_type",
+    "well",
+    "toxin_exposure",
+    "particle_type",
+    "particle_class",
+    "size_class",
+    "tile",
+    "year",
+    "season",
+    "collection_site"
+  ),
+  names(dat_qc)
+)
+
+for (nm in factor_cols_to_restore) {
+  dat_qc[[nm]] <- as.factor(dat_qc[[nm]])
+  analysis_ready[[nm]] <- as.factor(analysis_ready[[nm]])
+}
+
+cat("Key grouping variables re-coerced as factors.\n\n")
+
+# ---------------------------------------------------------
+# 16. Write datasets to disk
+# ---------------------------------------------------------
+
+readr::write_csv(dat_qc, file_qc_flagged_csv)
+saveRDS(dat_qc, file_qc_flagged_rds)
+
+readr::write_csv(analysis_ready, file_analysis_ready_csv)
+saveRDS(analysis_ready, file_analysis_ready_rds)
+
+cat("QC datasets written to disk:\n")
+cat("- ", file_qc_flagged_csv, "\n", sep = "")
+cat("- ", file_qc_flagged_rds, "\n", sep = "")
+cat("- ", file_analysis_ready_csv, "\n", sep = "")
+cat("- ", file_analysis_ready_rds, "\n", sep = "")
+
+if (requireNamespace("arrow", quietly = TRUE)) {
+  arrow::write_parquet(dat_qc, file_qc_flagged_parquet)
+  arrow::write_parquet(analysis_ready, file_analysis_ready_parquet)
+  cat("- ", file_qc_flagged_parquet, "\n", sep = "")
+  cat("- ", file_analysis_ready_parquet, "\n", sep = "")
+} else {
+  cat("Parquet outputs skipped because package 'arrow' is not available.\n")
+}
+
+cat("\n")
+
+# ---------------------------------------------------------
+# 17. Build QC overview summary
+# ---------------------------------------------------------
+
+n_total_rows <- nrow(dat_qc)
+n_flagged_rows <- sum(dat_qc$qc_any_flag, na.rm = TRUE)
+n_excluded_rows <- sum(dat_qc$exclusion_flag, na.rm = TRUE)
+pct_flagged_rows <- round((n_flagged_rows / n_total_rows) * 100, 2)
+pct_excluded_rows <- round((n_excluded_rows / n_total_rows) * 100, 2)
+
+qc_overview <- tibble::tibble(
+  metric = c(
+    "n_total_rows",
+    "n_flagged_rows",
+    "pct_flagged_rows",
+    "n_excluded_rows",
+    "pct_excluded_rows",
+    "n_analysis_ready_rows"
+  ),
+  value = c(
+    n_total_rows,
+    n_flagged_rows,
+    pct_flagged_rows,
+    n_excluded_rows,
+    pct_excluded_rows,
+    nrow(analysis_ready)
+  )
+)
+
+# ---------------------------------------------------------
+# 18. Write QC log
+# ---------------------------------------------------------
+
+sink(file_qc_log)
+cat("SPM Analysis - 03_qc_and_exclusions log\n")
+cat("Generated:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n\n")
+
+cat("Project:\n")
+cat(project_title, "\n")
+cat("Manuscript:\n")
+cat(manuscript_short, "\n\n")
+
+cat("Input dataset:\n")
+cat(input_source_used, "\n\n")
+
+cat("QC overview:\n")
+print(qc_overview)
+cat("\n")
+
+cat("Flag summary:\n")
+print(qc_flag_summary)
+cat("\n")
+
+cat("Exclusion summary:\n")
+print(exclusion_summary)
+cat("\n")
+
+cat("Rows with exclusions applied:\n")
+print(
+  dat_qc |>
+    dplyr::filter(exclusion_flag) |>
+    dplyr::select(
+      row_id,
+      dplyr::any_of(c("video_file", "experiment_id", "experiment_type", "culture", "well")),
+      exclusion_reason,
+      exclusion_reason_pretty
+    )
+)
+cat("\n")
+
+cat("Session information:\n\n")
+print(utils::sessionInfo())
+sink()
+
+cat("QC log written to:\n")
+cat(file_qc_log, "\n\n")
+
+# ---------------------------------------------------------
+# 19. Console summaries
+# ---------------------------------------------------------
+
+cat("QC overview:\n")
+print(qc_overview)
+cat("\n")
+
+cat("Top QC flags:\n")
+print(utils::head(qc_flag_summary, 10))
+cat("\n")
+
+cat("Top exclusion rules:\n")
+print(utils::head(exclusion_summary, 10))
+cat("\n")
+
+if ("experiment_type" %in% names(analysis_ready)) {
+  cat("Analysis-ready rows by experiment_type:\n")
+  print(table(analysis_ready$experiment_type, useNA = "ifany"))
+  cat("\n")
+}
+
+cat("========================================================\n")
+cat("SCRIPT 03 COMPLETE: QC AND EXCLUSIONS\n")
+cat("End time:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("========================================================\n\n")

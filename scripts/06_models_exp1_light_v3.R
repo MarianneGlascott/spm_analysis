@@ -1,0 +1,861 @@
+# =========================================================
+# Script title: 06_models_exp1_light_v3.R
+# Project: SPM Analysis
+# Author: Marianne Glascott
+# Affiliation: School of Life Sciences, University of Sussex
+# Manuscript: Manuscript 4
+# Purpose: Fit and evaluate Experiment 1 light-only models
+#          for motile fraction using primary cell counts,
+#          generate prediction outputs, compare candidate
+#          models, and save experiment-specific summaries
+#          and figures to disk.
+# Inputs:
+# - data_derived/ms4_analysis_derived.csv or .rds
+# Outputs:
+# - outputs/models/exp1_light/*.rds
+# - outputs/models/exp1_light/*_fixed_effects.csv
+# - outputs/models/exp1_light/*_metadata.csv
+# - outputs/models/exp1_light/*_diagnostics_summary.csv
+# - outputs/models/exp1_light/*_model_comparison.csv
+# - outputs/models/exp1_light/*_predictions.csv
+# - outputs/tables/06_exp1_light_dataset_summary.csv
+# - outputs/tables/06_exp1_light_model_comparison.csv
+# - outputs/tables/06_exp1_light_model_summary_table.csv
+# - outputs/figures/models_exp1/Fig2_light_model_predictions_*.{pdf,png,tiff}
+# - outputs/logs/06_models_exp1_light_log_*.txt
+# Date created: 26 March 2026
+# Last updated: 26 March 2026
+# Notes/dependencies:
+# - Run 01_setup_packages_and_paths.R first.
+# - Run 04_derive_variables.R before this script.
+# - Primary fitted response:
+#   cbind(mobile_cell_count, stationary_cell_count)
+# - Manuscript 4 block must be restricted to:
+#   experiment_num %in% c(8.2, 9.2, 10.2, 11.2)
+# - Focal modelling subset for this script:
+#   experiment_num == 9.2
+# - Core candidate model from brief:
+#   cbind(mobile_cell_count, stationary_cell_count) ~
+#   lux_exposure * days_from_start + (1 | culture)
+# - Experiment 1 irradiance levels:
+#   0, 4, 70, 117 lux
+# - Photoperiod:
+#   12:12 light:dark
+# - This script also fits additive, factor-lux sensitivity,
+#   and null comparator models.
+# =========================================================
+
+cat("\n========================================================\n")
+cat("SCRIPT 06: MODELS EXP1 LIGHT\n")
+cat("Start time:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("========================================================\n\n")
+
+# ---------------------------------------------------------
+# 1. Check setup objects
+# ---------------------------------------------------------
+
+required_objects <- c(
+  "project_root",
+  "dir_data_derived",
+  "dir_tables",
+  "dir_logs",
+  "project_title",
+  "manuscript_short"
+)
+
+missing_objects <- required_objects[!vapply(required_objects, exists, logical(1), inherits = TRUE)]
+
+if (length(missing_objects) > 0) {
+  stop(
+    paste0(
+      "The following required setup object(s) are missing:\n- ",
+      paste(missing_objects, collapse = "\n- "),
+      "\nPlease run 01_setup_packages_and_paths.R first."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Setup objects verified.\n\n")
+
+# ---------------------------------------------------------
+# 2. Source helper scripts if available
+# ---------------------------------------------------------
+
+helper_files <- c(
+  "helpers_theme.R",
+  "helpers_save_figures.R",
+  "helpers_labels.R",
+  "helpers_tables.R",
+  "helpers_model_checks.R"
+)
+
+for (hf in helper_files) {
+  helper_path <- file.path(project_root, "R", hf)
+  if (file.exists(helper_path)) {
+    source(helper_path)
+    cat("Loaded helper:", hf, "\n")
+  }
+}
+cat("\n")
+
+# ---------------------------------------------------------
+# 3. Define input and output paths
+# ---------------------------------------------------------
+
+file_input_rds <- file.path(dir_data_derived, "ms4_analysis_derived.rds")
+file_input_csv <- file.path(dir_data_derived, "ms4_analysis_derived.csv")
+
+exp1_model_subdir <- "exp1_light"
+exp1_figure_subdir <- "models_exp1"
+
+file_dataset_summary <- file.path(dir_tables, "06_exp1_light_dataset_summary.csv")
+file_model_comparison_table <- file.path(dir_tables, "06_exp1_light_model_comparison.csv")
+file_model_summary_table <- file.path(dir_tables, "06_exp1_light_model_summary_table.csv")
+
+timestamp_now <- format(Sys.time(), "%Y%m%d_%H%M%S")
+file_model_log <- file.path(
+  dir_logs,
+  paste0("06_models_exp1_light_log_", timestamp_now, ".txt")
+)
+
+# ---------------------------------------------------------
+# 4. Import derived dataset
+# ---------------------------------------------------------
+
+if (file.exists(file_input_rds)) {
+  dat <- readRDS(file_input_rds)
+  input_source_used <- file_input_rds
+} else if (file.exists(file_input_csv)) {
+  dat <- readr::read_csv(file_input_csv, show_col_types = FALSE, progress = FALSE)
+  input_source_used <- file_input_csv
+} else {
+  stop(
+    paste0(
+      "No derived analysis dataset found.\nExpected one of:\n- ",
+      file_input_rds,
+      "\n- ",
+      file_input_csv,
+      "\nPlease run 04_derive_variables.R first."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Derived analysis dataset loaded from:\n")
+cat(input_source_used, "\n")
+cat("Rows:", nrow(dat), "\n")
+cat("Columns:", ncol(dat), "\n\n")
+
+# ---------------------------------------------------------
+# 5. Check required columns
+# ---------------------------------------------------------
+
+required_columns <- c(
+  "experiment",
+  "experiment_num",
+  "experiment_type",
+  "mobile_cell_count",
+  "stationary_cell_count",
+  "lux_exposure",
+  "days_from_start",
+  "culture"
+)
+
+missing_required_columns <- required_columns[!required_columns %in% names(dat)]
+
+if (length(missing_required_columns) > 0) {
+  stop(
+    paste0(
+      "The following required Experiment 1 column(s) are missing:\n- ",
+      paste(missing_required_columns, collapse = "\n- "),
+      "\nPlease review upstream scripts."
+    ),
+    call. = FALSE
+  )
+}
+
+cat("Required Experiment 1 columns verified.\n\n")
+
+# ---------------------------------------------------------
+# 6. Restrict to Manuscript 4 block, then focal experiment
+# ---------------------------------------------------------
+
+ms4_experiment_nums <- c(8.2, 9.2, 10.2, 11.2)
+
+dat <- dat |>
+  dplyr::mutate(
+    experiment_num = suppressWarnings(as.numeric(as.character(experiment_num))),
+    experiment_chr = stringr::str_squish(as.character(experiment)),
+    experiment_type = as.character(experiment_type)
+  ) |>
+  dplyr::filter(
+    !is.na(experiment_num),
+    experiment_num %in% ms4_experiment_nums
+  )
+
+cat("Restricted to Manuscript 4 experimental block.\n")
+cat("Rows in MS4 block:", nrow(dat), "\n\n")
+
+exp1_dat <- dat |>
+  dplyr::filter(experiment_num == 9.2) |>
+  dplyr::filter(
+    !is.na(mobile_cell_count),
+    !is.na(stationary_cell_count),
+    !is.na(lux_exposure),
+    !is.na(days_from_start),
+    !is.na(culture)
+  ) |>
+  dplyr::mutate(
+    culture = as.factor(culture),
+    days_from_start = as.integer(days_from_start),
+    lux_exposure = as.numeric(lux_exposure)
+  )
+
+if (nrow(exp1_dat) == 0) {
+  stop("No Experiment 1 rows available after filtering.", call. = FALSE)
+}
+
+cat("Experiment 1 focal subset created.\n")
+cat("Rows:", nrow(exp1_dat), "\n")
+cat("Cultures:", dplyr::n_distinct(exp1_dat$culture, na.rm = TRUE), "\n")
+cat("Days:", paste(sort(unique(exp1_dat$days_from_start)), collapse = ", "), "\n")
+cat("Lux levels observed:", paste(sort(unique(exp1_dat$lux_exposure)), collapse = ", "), "\n\n")
+
+# ---------------------------------------------------------
+# 7. Validate expected lux levels and derive support vars
+# ---------------------------------------------------------
+
+expected_lux_levels <- c(0, 4, 70, 117)
+observed_lux_levels <- sort(unique(exp1_dat$lux_exposure))
+
+if (!all(observed_lux_levels %in% expected_lux_levels)) {
+  warning(
+    paste0(
+      "Observed lux levels include values outside expected design levels (0, 4, 70, 117): ",
+      paste(observed_lux_levels, collapse = ", ")
+    ),
+    call. = FALSE
+  )
+}
+
+exp1_dat <- exp1_dat |>
+  dplyr::mutate(
+    total_cells = mobile_cell_count + stationary_cell_count,
+    motility_ratio = dplyr::if_else(
+      total_cells > 0,
+      mobile_cell_count / total_cells,
+      NA_real_
+    ),
+    lux_exposure_z = as.numeric(scale(lux_exposure)),
+    lux_exposure_f = factor(
+      lux_exposure,
+      levels = expected_lux_levels,
+      labels = c("0 lux", "4 lux", "70 lux", "117 lux"),
+      ordered = TRUE
+    ),
+    days_from_start_f = factor(
+      days_from_start,
+      levels = sort(unique(days_from_start))
+    ),
+    photoperiod = "12:12 light:dark",
+    day_label = paste0("Day ", days_from_start),
+    experiment_plot_label = "Experiment 1: Light-only gradient"
+  )
+
+cat("Experiment 1 modelling support variables derived.\n\n")
+
+# ---------------------------------------------------------
+# 8. Build dataset summary table
+# ---------------------------------------------------------
+
+has_well <- "well" %in% names(exp1_dat)
+has_video_file <- "video_file" %in% names(exp1_dat)
+
+exp1_dataset_summary <- exp1_dat |>
+  dplyr::group_by(days_from_start, lux_exposure, lux_exposure_f) |>
+  dplyr::summarise(
+    n_rows = dplyr::n(),
+    n_cultures = dplyr::n_distinct(culture, na.rm = TRUE),
+    n_wells = if (has_well) dplyr::n_distinct(well, na.rm = TRUE) else NA_integer_,
+    n_videos = if (has_video_file) dplyr::n_distinct(video_file, na.rm = TRUE) else NA_integer_,
+    mean_total_cells = mean(total_cells, na.rm = TRUE),
+    mean_motility_ratio = mean(motility_ratio, na.rm = TRUE),
+    sd_motility_ratio = stats::sd(motility_ratio, na.rm = TRUE),
+    photoperiod = dplyr::first(photoperiod),
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(days_from_start, lux_exposure)
+
+readr::write_csv(exp1_dataset_summary, file_dataset_summary)
+
+cat("Experiment 1 dataset summary written to:\n")
+cat(file_dataset_summary, "\n\n")
+
+# ---------------------------------------------------------
+# 9. Define candidate model formulas
+# ---------------------------------------------------------
+
+formula_full_numeric <- cbind(mobile_cell_count, stationary_cell_count) ~
+  lux_exposure * days_from_start + (1 | culture)
+
+formula_additive_numeric <- cbind(mobile_cell_count, stationary_cell_count) ~
+  lux_exposure + days_from_start + (1 | culture)
+
+formula_full_factor <- cbind(mobile_cell_count, stationary_cell_count) ~
+  lux_exposure_f * days_from_start + (1 | culture)
+
+formula_null <- cbind(mobile_cell_count, stationary_cell_count) ~
+  1 + (1 | culture)
+
+cat("Candidate model formulas defined.\n\n")
+
+# ---------------------------------------------------------
+# 10. Fit candidate models
+# ---------------------------------------------------------
+
+if (!exists("fit_check_save_model", mode = "function", inherits = TRUE)) {
+  stop("helpers_model_checks.R was not loaded correctly.", call. = FALSE)
+}
+
+# --- Full numeric interaction model
+fit_full_numeric <- fit_check_save_model(
+  formula = formula_full_numeric,
+  data = exp1_dat,
+  model_name = "exp1_light_full_numeric_interaction",
+  model_subdir = exp1_model_subdir,
+  save_terms_csv = TRUE,
+  save_meta_csv = TRUE,
+  save_diagnostics = TRUE,
+  run_dharma = TRUE,
+  run_performance = TRUE,
+  conf.level = 0.95,
+  exponentiate = FALSE,
+  quiet = FALSE
+)
+
+# --- Additive numeric model
+fit_additive_numeric <- fit_check_save_model(
+  formula = formula_additive_numeric,
+  data = exp1_dat,
+  model_name = "exp1_light_additive_numeric",
+  model_subdir = exp1_model_subdir,
+  save_terms_csv = TRUE,
+  save_meta_csv = TRUE,
+  save_diagnostics = TRUE,
+  run_dharma = TRUE,
+  run_performance = TRUE,
+  conf.level = 0.95,
+  exponentiate = FALSE,
+  quiet = FALSE
+)
+
+# --- Full factor interaction model (lux as factor)
+fit_full_factor <- fit_check_save_model(
+  formula = formula_full_factor,
+  data = exp1_dat,
+  model_name = "exp1_light_full_factor_interaction",
+  model_subdir = exp1_model_subdir,
+  save_terms_csv = TRUE,
+  save_meta_csv = TRUE,
+  save_diagnostics = TRUE,
+  run_dharma = TRUE,
+  run_performance = TRUE,
+  conf.level = 0.95,
+  exponentiate = FALSE,
+  quiet = FALSE
+)
+
+# --- Null model
+fit_null <- fit_check_save_model(
+  formula = formula_null,
+  data = exp1_dat,
+  model_name = "exp1_light_null",
+  model_subdir = exp1_model_subdir,
+  save_terms_csv = TRUE,
+  save_meta_csv = TRUE,
+  save_diagnostics = TRUE,
+  run_dharma = TRUE,
+  run_performance = TRUE,
+  conf.level = 0.95,
+  exponentiate = FALSE,
+  quiet = FALSE
+)
+
+# --- Confirm success explicitly (prevents silent downstream failure)
+if (!all(c("fit_full_numeric", "fit_additive_numeric", "fit_full_factor", "fit_null") %in% ls())) {
+  stop("One or more model fits failed. Check errors above.", call. = FALSE)
+}
+
+cat("Candidate models fitted successfully.\n\n")
+
+# ---------------------------------------------------------
+# 11. Compare candidate models
+# ---------------------------------------------------------
+
+if (!exists("compare_models_aic", mode = "function", inherits = TRUE)) {
+  stop("compare_models_aic() is not available.", call. = FALSE)
+}
+
+model_comparison <- compare_models_aic(
+  full_numeric_interaction = fit_full_numeric$model,
+  additive_numeric = fit_additive_numeric$model,
+  full_factor_interaction = fit_full_factor$model,
+  null = fit_null$model
+) |>
+  dplyr::mutate(
+    experiment = "Experiment 1",
+    experiment_num = 9.2
+  )
+
+readr::write_csv(model_comparison, file_model_comparison_table)
+
+if (exists("write_model_summary_csv", mode = "function", inherits = TRUE)) {
+  write_model_summary_csv(
+    data = model_comparison,
+    file_stem = "exp1_light_model_comparison",
+    subdir = exp1_model_subdir,
+    quiet = FALSE
+  )
+}
+
+cat("Model comparison written to:\n")
+cat(file_model_comparison_table, "\n\n")
+
+# ---------------------------------------------------------
+# 12. Likelihood ratio comparisons
+# ---------------------------------------------------------
+
+lrt_additive_vs_full_numeric <- tryCatch(
+  stats::anova(fit_additive_numeric$model, fit_full_numeric$model),
+  error = function(e) e
+)
+
+lrt_null_vs_additive_numeric <- tryCatch(
+  stats::anova(fit_null$model, fit_additive_numeric$model),
+  error = function(e) e
+)
+
+factor_vs_numeric_note <- paste(
+  "full_factor_interaction and full_numeric_interaction are compared by information criteria",
+  "rather than likelihood ratio test because they are not nested parameterisations."
+)
+
+# ---------------------------------------------------------
+# 13. Select preferred model
+# ---------------------------------------------------------
+
+preferred_model_name <- model_comparison$model[[1]]
+
+preferred_model <- switch(
+  preferred_model_name,
+  full_numeric_interaction = fit_full_numeric$model,
+  additive_numeric = fit_additive_numeric$model,
+  full_factor_interaction = fit_full_factor$model,
+  null = fit_null$model,
+  fit_full_numeric$model
+)
+
+cat("Preferred model selected by lowest AIC:\n")
+cat(preferred_model_name, "\n\n")
+
+# ---------------------------------------------------------
+# 14. Build prediction grid
+# ---------------------------------------------------------
+
+if (!exists("make_prediction_grid", mode = "function", inherits = TRUE) ||
+    !exists("predict_glmmtmb_response", mode = "function", inherits = TRUE)) {
+  stop("Prediction helpers are not available.", call. = FALSE)
+}
+
+if (preferred_model_name %in% c("full_numeric_interaction", "additive_numeric")) {
+  pred_grid <- make_prediction_grid(
+    data = exp1_dat,
+    focal_terms = c("lux_exposure", "days_from_start"),
+    at = list(
+      days_from_start = sort(unique(exp1_dat$days_from_start))
+    ),
+    n_numeric = 100
+  )
+  
+  pred_out <- predict_glmmtmb_response(
+    model = preferred_model,
+    newdata = pred_grid,
+    conf.level = 0.95,
+    re.form = NA
+  ) |>
+    dplyr::mutate(
+      prediction_scale = "numeric_lux",
+      day_label = paste0("Day ", days_from_start)
+    )
+} else if (preferred_model_name == "full_factor_interaction") {
+  pred_grid <- make_prediction_grid(
+    data = exp1_dat,
+    focal_terms = c("lux_exposure_f", "days_from_start"),
+    at = list(
+      days_from_start = sort(unique(exp1_dat$days_from_start)),
+      lux_exposure_f = levels(exp1_dat$lux_exposure_f)
+    ),
+    n_numeric = 100
+  )
+  
+  pred_out <- predict_glmmtmb_response(
+    model = preferred_model,
+    newdata = pred_grid,
+    conf.level = 0.95,
+    re.form = NA
+  ) |>
+    dplyr::mutate(
+      prediction_scale = "factor_lux",
+      day_label = paste0("Day ", days_from_start)
+    )
+} else {
+  pred_grid <- make_prediction_grid(
+    data = exp1_dat,
+    focal_terms = c("days_from_start"),
+    at = list(
+      days_from_start = sort(unique(exp1_dat$days_from_start)),
+      lux_exposure = median(exp1_dat$lux_exposure, na.rm = TRUE),
+      lux_exposure_f = factor("70 lux", levels = levels(exp1_dat$lux_exposure_f), ordered = TRUE)
+    ),
+    n_numeric = 100
+  )
+  
+  pred_out <- predict_glmmtmb_response(
+    model = preferred_model,
+    newdata = pred_grid,
+    conf.level = 0.95,
+    re.form = NA
+  ) |>
+    dplyr::mutate(
+      prediction_scale = "null_model",
+      day_label = paste0("Day ", days_from_start)
+    )
+}
+
+if (exists("write_model_summary_csv", mode = "function", inherits = TRUE)) {
+  write_model_summary_csv(
+    data = pred_out,
+    file_stem = "exp1_light_preferred_model_predictions",
+    subdir = exp1_model_subdir,
+    quiet = FALSE
+  )
+}
+
+cat("Prediction outputs generated and saved.\n\n")
+
+# ---------------------------------------------------------
+# 15. Build fixed-effect summary for preferred model
+# ---------------------------------------------------------
+
+if (!exists("build_model_term_summary", mode = "function", inherits = TRUE)) {
+  stop("build_model_term_summary() is not available.", call. = FALSE)
+}
+
+preferred_fixed_effects <- build_model_term_summary(
+  model = preferred_model,
+  model_name = preferred_model_name,
+  conf.level = 0.95,
+  exponentiate = FALSE
+) |>
+  dplyr::mutate(
+    experiment = "Experiment 1",
+    experiment_num = 9.2
+  )
+
+readr::write_csv(preferred_fixed_effects, file_model_summary_table)
+
+cat("Preferred model fixed-effect summary written to:\n")
+cat(file_model_summary_table, "\n\n")
+
+# ---------------------------------------------------------
+# 16. Build Experiment 1 figure
+# ---------------------------------------------------------
+
+if (exists("set_kelp_theme", mode = "function", inherits = TRUE)) {
+  set_kelp_theme()
+}
+
+exp1_light_palette <- c(
+  "0 lux" = "#f7f7f7",
+  "4 lux" = "#cccccc",
+  "70 lux" = "#969696",
+  "117 lux" = "#525252"
+)
+
+plot_raw <- exp1_dat |>
+  dplyr::mutate(
+    day_label = paste0("Day ", days_from_start)
+  )
+
+if (preferred_model_name %in% c("full_numeric_interaction", "additive_numeric")) {
+  p_exp1 <- ggplot2::ggplot() +
+    ggplot2::geom_point(
+      data = plot_raw,
+      ggplot2::aes(
+        x = lux_exposure,
+        y = motility_ratio
+      ),
+      alpha = 0.30,
+      size = 1.8
+    ) +
+    ggplot2::geom_ribbon(
+      data = pred_out,
+      ggplot2::aes(
+        x = lux_exposure,
+        ymin = conf_low_response,
+        ymax = conf_high_response
+      ),
+      alpha = 0.18
+    ) +
+    ggplot2::geom_line(
+      data = pred_out,
+      ggplot2::aes(
+        x = lux_exposure,
+        y = fit_response
+      ),
+      linewidth = 0.7
+    ) +
+    ggplot2::facet_wrap(~ day_label) +
+    ggplot2::labs(
+      title = "Light-only gradient",
+      subtitle = "Model-predicted motile fraction versus irradiance with raw observations",
+      x = "Irradiance (lux)",
+      y = "Motile fraction",
+      caption = "Points show raw observations; lines and ribbons show model predictions with 95% confidence intervals. Irradiance treatments were 0, 4, 70, and 117 lux under a 12:12 light:dark photoperiod."
+    )
+} else {
+  p_exp1 <- ggplot2::ggplot() +
+    ggplot2::geom_point(
+      data = plot_raw,
+      ggplot2::aes(
+        x = lux_exposure_f,
+        y = motility_ratio,
+        colour = lux_exposure_f
+      ),
+      position = ggplot2::position_jitter(width = 0.12, height = 0),
+      alpha = 0.35,
+      size = 1.8
+    ) +
+    ggplot2::geom_pointrange(
+      data = pred_out,
+      ggplot2::aes(
+        x = lux_exposure_f,
+        y = fit_response,
+        ymin = conf_low_response,
+        ymax = conf_high_response,
+        colour = lux_exposure_f
+      ),
+      linewidth = 0.5
+    ) +
+    ggplot2::facet_wrap(~ day_label) +
+    ggplot2::scale_colour_manual(values = exp1_light_palette, drop = FALSE) +
+    ggplot2::labs(
+      title = "Light-only gradient",
+      subtitle = "Model-predicted motile fraction by irradiance treatment with raw observations",
+      x = "Irradiance treatment",
+      y = "Motile fraction",
+      colour = "Irradiance",
+      caption = "Points show raw observations; pointranges show model predictions with 95% confidence intervals. Irradiance treatments were 0, 4, 70, and 117 lux under a 12:12 light:dark photoperiod."
+    )
+}
+
+# ---------------------------------------------------------
+# 17. Save Experiment 1 figure
+# ---------------------------------------------------------
+
+saved_figures <- character(0)
+
+if (exists("save_figure_both_widths", mode = "function", inherits = TRUE)) {
+  saved_figures <- save_figure_both_widths(
+    plot = p_exp1,
+    figure_name = "Fig2_light_model_predictions",
+    subdir = exp1_figure_subdir,
+    height = "standard",
+    quiet = TRUE
+  )
+}
+
+if (exists("write_figure_caption_md", mode = "function", inherits = TRUE)) {
+  write_figure_caption_md(
+    figure_name = "Fig2_light_model_predictions",
+    caption_text = "Model-predicted motile fraction as a function of irradiance in the light-only experiment. Raw observations are overlaid, and 95% confidence intervals are shown around fitted values. Panels are shown by day from start. Irradiance treatments were 0, 4, 70, and 117 lux under a 12:12 light:dark photoperiod.",
+    subdir = exp1_figure_subdir
+  )
+}
+
+cat("Experiment 1 figure processed.\n\n")
+
+# ---------------------------------------------------------
+# 18. Save extra model objects and summaries
+# ---------------------------------------------------------
+
+if (exists("write_model_summary_rds", mode = "function", inherits = TRUE)) {
+  write_model_summary_rds(
+    object = list(
+      lrt_additive_vs_full_numeric = lrt_additive_vs_full_numeric,
+      lrt_null_vs_additive_numeric = lrt_null_vs_additive_numeric,
+      factor_vs_numeric_note = factor_vs_numeric_note,
+      preferred_model_name = preferred_model_name
+    ),
+    file_stem = "exp1_light_model_tests_and_selection",
+    subdir = exp1_model_subdir,
+    quiet = FALSE
+  )
+  
+  write_model_summary_rds(
+    object = pred_out,
+    file_stem = "exp1_light_preferred_model_predictions",
+    subdir = exp1_model_subdir,
+    quiet = FALSE
+  )
+}
+
+# ---------------------------------------------------------
+# 19. Optional emmeans summary
+# ---------------------------------------------------------
+
+emmeans_day <- NULL
+emmeans_lux_factor <- NULL
+
+if (exists("get_emmeans_table", mode = "function", inherits = TRUE)) {
+  emmeans_day <- tryCatch(
+    get_emmeans_table(
+      model = preferred_model,
+      specs = ~ days_from_start,
+      type = "response"
+    ),
+    error = function(e) NULL
+  )
+  
+  if (!is.null(emmeans_day) && exists("write_model_summary_csv", mode = "function", inherits = TRUE)) {
+    write_model_summary_csv(
+      data = emmeans_day,
+      file_stem = "exp1_light_emmeans_by_day",
+      subdir = exp1_model_subdir,
+      quiet = FALSE
+    )
+  }
+  
+  if (preferred_model_name == "full_factor_interaction") {
+    emmeans_lux_factor <- tryCatch(
+      get_emmeans_table(
+        model = preferred_model,
+        specs = ~ lux_exposure_f,
+        type = "response"
+      ),
+      error = function(e) NULL
+    )
+    
+    if (!is.null(emmeans_lux_factor) && exists("write_model_summary_csv", mode = "function", inherits = TRUE)) {
+      write_model_summary_csv(
+        data = emmeans_lux_factor,
+        file_stem = "exp1_light_emmeans_by_lux_factor",
+        subdir = exp1_model_subdir,
+        quiet = FALSE
+      )
+    }
+  }
+}
+
+# ---------------------------------------------------------
+# 20. Write log
+# ---------------------------------------------------------
+
+sink(file_model_log)
+cat("SPM Analysis - 06_models_exp1_light log\n")
+cat("Generated:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n\n")
+
+cat("Project:\n")
+cat(project_title, "\n")
+cat("Manuscript:\n")
+cat(manuscript_short, "\n\n")
+
+cat("Input dataset:\n")
+cat(input_source_used, "\n\n")
+
+cat("Experiment 1 subset dimensions:\n")
+cat("Rows:", nrow(exp1_dat), "\n")
+cat("Columns:", ncol(exp1_dat), "\n\n")
+
+cat("Observed lux levels:\n")
+cat(paste(observed_lux_levels, collapse = ", "), "\n\n")
+
+cat("Photoperiod:\n")
+cat("12:12 light:dark\n\n")
+
+cat("Experiment 1 dataset summary:\n")
+print(exp1_dataset_summary)
+cat("\n")
+
+cat("Model comparison:\n")
+print(model_comparison)
+cat("\n")
+
+cat("Preferred model name:\n")
+cat(preferred_model_name, "\n\n")
+
+cat("Preferred fixed effects:\n")
+print(preferred_fixed_effects)
+cat("\n")
+
+cat("Likelihood ratio test: additive numeric vs full numeric interaction\n")
+print(lrt_additive_vs_full_numeric)
+cat("\n")
+
+cat("Likelihood ratio test: null vs additive numeric\n")
+print(lrt_null_vs_additive_numeric)
+cat("\n")
+
+cat("Factor vs numeric note:\n")
+cat(factor_vs_numeric_note, "\n\n")
+
+if (!is.null(emmeans_day)) {
+  cat("Estimated marginal means by day:\n")
+  print(emmeans_day)
+  cat("\n")
+}
+
+if (!is.null(emmeans_lux_factor)) {
+  cat("Estimated marginal means by lux factor:\n")
+  print(emmeans_lux_factor)
+  cat("\n")
+}
+
+cat("Saved figures:\n")
+if (length(saved_figures) == 0) {
+  cat("No figures were automatically saved.\n")
+} else {
+  cat(paste(saved_figures, collapse = "\n"), "\n")
+}
+cat("\n")
+
+cat("Session information:\n\n")
+print(utils::sessionInfo())
+sink()
+
+cat("Model log written to:\n")
+cat(file_model_log, "\n\n")
+
+# ---------------------------------------------------------
+# 21. Console summary
+# ---------------------------------------------------------
+
+cat("Model comparison:\n")
+print(model_comparison)
+cat("\n")
+
+cat("Preferred model:\n")
+cat(preferred_model_name, "\n\n")
+
+cat("Preferred fixed effects:\n")
+print(preferred_fixed_effects)
+cat("\n")
+
+cat("06 Experiment 1 modelling outputs written successfully.\n\n")
+
+cat("========================================================\n")
+cat("SCRIPT 06 COMPLETE: MODELS EXP1 LIGHT\n")
+cat("End time:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("========================================================\n\n")
+
