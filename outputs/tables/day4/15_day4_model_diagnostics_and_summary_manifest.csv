@@ -1,0 +1,6 @@
+output_type,path,notes
+preferred_model_summary,C:/SPM_Analysis/outputs/tables/day4/15_day4_preferred_model_summary.csv,"Preferred-model information, model-selection certainty flag, and interpretation notes for Experiments 1-4."
+dharma_diagnostic_summary,C:/SPM_Analysis/outputs/tables/day4/15_day4_dharma_diagnostic_summary.csv,"DHARMa uniformity, dispersion, outlier, and zero-inflation checks for preferred models only; candidate-model uncertainty is reported in model comparison tables."
+ranked_relative_effects,C:/SPM_Analysis/outputs/tables/day4/15_day4_relative_effects_ranked.csv,All relative effects ranked by absolute predicted proportional change.
+reference_condition_summary,C:/SPM_Analysis/outputs/tables/day4/15_day4_reference_condition_summary.csv,Experiment-specific reference conditions used in relative-effect calculations.
+diagnostic_figure_directory,C:/SPM_Analysis/outputs/figures/day4/diagnostics,Directory containing DHARMa diagnostic PDF and PNG plots.

@@ -1,0 +1,33 @@
+experiment,experiment_label,model,family,df,AIC,delta_aic,selected_model,model_status,error_message
+Experiment 1,Light-only gradient,factor_betabinomial,betabinomial,5,429.66074905195,0,Yes,success,NA
+Experiment 1,Light-only gradient,null_betabinomial,betabinomial,2,430.37924953542097,0.7185004834709616,No,success,NA
+Experiment 1,Light-only gradient,factor_binomial,binomial,4,1096.7046767759016,667.0439277239516,No,success,NA
+Experiment 1,Light-only gradient,null_binomial,binomial,1,1097.125497131613,667.464748079663,No,success,NA
+Experiment 2,Defined particle concentration series,particle_only_betabinomial,betabinomial,4,482.0238568154068,0,Yes,success,NA
+Experiment 2,Defined particle concentration series,interaction_betabinomial,betabinomial,7,483.7847850789228,1.760928263516007,No,success,NA
+Experiment 2,Defined particle concentration series,additive_betabinomial,betabinomial,5,483.8789442061157,1.8550873907088317,No,success,NA
+Experiment 2,Defined particle concentration series,null_betabinomial,betabinomial,2,485.4832854100955,3.4594285946886885,No,success,NA
+Experiment 2,Defined particle concentration series,ntu_only_betabinomial,betabinomial,3,487.3582647118461,5.334407896439302,No,success,NA
+Experiment 2,Defined particle concentration series,interaction_binomial,binomial,6,1532.8403707407465,1050.8165139253397,No,success,NA
+Experiment 2,Defined particle concentration series,particle_only_binomial,binomial,3,1649.0046715619949,1166.9808147465878,No,success,NA
+Experiment 2,Defined particle concentration series,additive_binomial,binomial,4,1650.1109047115306,1168.0870478961235,No,success,NA
+Experiment 2,Defined particle concentration series,null_binomial,binomial,1,1783.1371984770076,1301.1133416616008,No,success,NA
+Experiment 2,Defined particle concentration series,ntu_only_binomial,binomial,2,1785.1234711466209,1303.099614331214,No,success,NA
+Experiment 3,Brake-wear size comparison,interaction_betabinomial,betabinomial,5,643.916294042527,0,Yes,success,NA
+Experiment 3,Brake-wear size comparison,additive_betabinomial,betabinomial,4,646.4624251435862,2.5461311010591317,No,success,NA
+Experiment 3,Brake-wear size comparison,concentration_only_betabinomial,betabinomial,3,646.506408467586,2.590114425058914,No,success,NA
+Experiment 3,Brake-wear size comparison,size_only_betabinomial,betabinomial,3,646.5625004180496,2.6462063755225245,No,success,NA
+Experiment 3,Brake-wear size comparison,null_betabinomial,betabinomial,2,646.7125885712611,2.7962945287340517,No,success,NA
+Experiment 3,Brake-wear size comparison,interaction_binomial,binomial,4,9757.967452030303,9114.051157987778,No,success,NA
+Experiment 3,Brake-wear size comparison,additive_binomial,binomial,3,10392.057419642388,9748.14112559986,No,success,NA
+Experiment 3,Brake-wear size comparison,concentration_only_binomial,binomial,2,10426.091033828092,9782.174739785563,No,success,NA
+Experiment 3,Brake-wear size comparison,size_only_binomial,binomial,2,10718.195052011324,10074.278757968796,No,success,NA
+Experiment 3,Brake-wear size comparison,null_binomial,binomial,1,10846.303010575852,10202.386716533329,No,success,NA
+Experiment 4,Field-derived SPM gradient,nonlinear_betabinomial,betabinomial,4,593.6210461645683,0,Yes,success,NA
+Experiment 4,Field-derived SPM gradient,null_betabinomial,betabinomial,2,595.7070636749653,2.086017510397028,No,success,NA
+Experiment 4,Field-derived SPM gradient,monotonic_betabinomial,betabinomial,3,597.3523581742664,3.731312009698172,No,success,NA
+Experiment 4,Field-derived SPM gradient,factor_betabinomial,betabinomial,11,601.6164215642606,7.995375399692307,No,success,NA
+Experiment 4,Field-derived SPM gradient,factor_binomial,binomial,10,127019.23848417743,126425.61743801288,No,success,NA
+Experiment 4,Field-derived SPM gradient,nonlinear_binomial,binomial,3,131561.0101039416,130967.38905777704,No,success,NA
+Experiment 4,Field-derived SPM gradient,monotonic_binomial,binomial,2,162123.12759341075,161529.5065472462,No,success,NA
+Experiment 4,Field-derived SPM gradient,null_binomial,binomial,1,272511.483335022,271917.8622888574,No,success,NA
